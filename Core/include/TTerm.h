@@ -33,7 +33,7 @@
 
 
 #define EXTENDED_PRINTF 1
-#define TERM_VERSION_STRING "V1.0"
+#define TERM_VERSION_STRING "V0.9"
 #define TERM_PROG_BUFFER_SIZE 32
 
 #define CTRL_C 0x03
