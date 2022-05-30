@@ -29,6 +29,7 @@
 #include <string.h>
 #include <stdarg.h>
 
+#include "apps.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stream_buffer.h"
@@ -102,6 +103,8 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
         ACL_add(head, "-r");
         ACL_add(head, "-aa");
         TERM_addCommandAC(test, ACL_defaultCompleter, head);  
+        
+        REGISTER_apps(&TERM_defaultList);
     }
     
 #ifdef TERM_ENABLE_STARTUP_TEXT
