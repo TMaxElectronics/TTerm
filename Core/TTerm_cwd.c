@@ -26,7 +26,7 @@
 
 #include "TTerm_cwd.h"
 #include "FreeRTOS.h"
-#include "FS.h"
+#include "ff.h"
 #include <string.h>
 
 #define BUFFER_SIZE 255

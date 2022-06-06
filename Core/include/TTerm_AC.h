@@ -59,4 +59,8 @@ unsigned ACL_isSorted(char * a, char * b);
 void ACL_remove(AC_LIST_HEAD * head, char * string);
 void ACL_add(AC_LIST_HEAD * head, char * string);
 
+#define TERM_addCommandConstAC(CMDhandler, command, helptext, ACList, CmdDesc) TERM_addCommandAC(TERM_addCommand(CMDhandler, command,helptext,0,CmdDesc) \
+                                                                                , ACL_defaultCompleter, ACL_createConst((char**)ACList, sizeof(ACList)/sizeof(char*)))
+
+
 #endif

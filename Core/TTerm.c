@@ -621,7 +621,7 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
 
         uint8_t retCode = TERM_CMD_EXIT_ERROR;
         if(cmd->function != 0){
-            configASSERT((cmd->function > 0x9d000000) && (cmd->function < 0x9d040000));
+            configASSERT((cmd->function > 0x9d000000) && (cmd->function < 0x9d100000));
             retCode = (*cmd->function)(handle, argCount, args);
         }
 

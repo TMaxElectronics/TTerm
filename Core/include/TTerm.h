@@ -153,7 +153,7 @@ typedef enum{
     TERM_CHECK_COMP_AND_HIST = 0b11, TERM_CHECK_COMP = 0b01, TERM_CHECK_HIST = 0b10, 
 } COPYCHECK_MODE;
 
-extern TermCommandDescriptor TERM_defaultList;
+extern TermCommandDescriptor TERM_defaultList; 
 
 #if EXTENDED_PRINTF == 1
 TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, void * port, unsigned echoEnabled, TermCommandDescriptor * cmdListHead, TermErrorPrinter errorPrinter, const char * usr);
