@@ -56,7 +56,7 @@
 #define TERM_CMD_EXIT_NOT_FOUND 1
 #define TERM_CMD_EXIT_SUCCESS 0xff
 #define TERM_CMD_EXIT_PROC_STARTED 0xfe
-#define TERM_CMD_CONTINUE 0x80
+#define TERM_CMD_PROC_RUNNING 0x80
 
 #if TERM_SUPPORT_CWD == 1
     #define TERM_DEVICE_NAME handle->cwdPath
@@ -72,7 +72,7 @@ const extern char TERM_startupText3[];
 
 
 #if EXTENDED_PRINTF == 1
-#define ttprintfEcho(format, ...) if(handle->echoEnabled) (*handle->print)(handle->port, format, ##__VA_ARGS__)
+#define ttprintfEcho(format, ...) if(handle->currEchoEnabled) (*handle->print)(handle->port, format, ##__VA_ARGS__)
 #else
 #define ttprintfEcho(format, ...) if(echoEnabled) (*handle->print)(format, ##__VA_ARGS__)
 #endif
@@ -82,6 +82,8 @@ const extern char TERM_startupText3[];
 #else
 #define ttprintf(format, ...) (*handle->print)(format, ##__VA_ARGS__)
 #endif
+
+#define ttgetline() TERM_getLine(handle, portMAX_DELAY)
 
 //entity holding data of an open terminal
 typedef struct __TERMINAL_HANDLE__ TERMINAL_HANDLE;
@@ -104,21 +106,35 @@ typedef struct{
     TaskHandle_t task;
     TermCommandInputHandler inputHandler;
     StreamBufferHandle_t inputStream;
+    
+    uint32_t returnCode;
+    
+    TermCommandDescriptor * cmd;
+    TERMINAL_HANDLE * handle;
+    char * commandString;
     char ** args;
     uint8_t argCount;
 } TermProgram;
+
+typedef struct{
+    enum {TYPE_CHAR, TYPE_STRING} type : 8;
+    uint32_t size : 24;
+    void * data;
+} LineData;
 
 struct __TermCommandDescriptor__{
     TermCommandFunction function;
     const char * command;
     const char * commandDescription;
     uint32_t commandLength;
-    uint8_t minPermissionLevel;
+    uint32_t stackSize;
     TermAutoCompHandler ACHandler;
     void * ACParams;
     
     TermCommandDescriptor * nextCmd;
 };
+
+typedef enum {INPUTMODE_NONE, INPUTMODE_DIRECT, INPUTMODE_GET_LINE} InputMode_t;
 
 struct __TERMINAL_HANDLE__{
     char * inputBuffer;
@@ -128,7 +144,9 @@ struct __TERMINAL_HANDLE__{
     uint32_t currBufferPosition;
     uint32_t currBufferLength;
     uint32_t currAutocompleteCount;
+    TermProgram * nextProgram;
     TermProgram * currProgram;
+    InputMode_t * currProgramInputMode;
     char ** autocompleteBuffer;
     uint32_t autocompleteBufferLength;
     uint32_t autocompleteStart;    
@@ -140,6 +158,7 @@ struct __TERMINAL_HANDLE__{
     uint8_t currEscSeqPos;
     uint8_t escSeqBuff[16];
     unsigned echoEnabled;
+    unsigned currEchoEnabled;
     TermCommandDescriptor * cmdListHead;
     TermErrorPrinter errorPrinter;
 //TODO actually finish implementing this...
@@ -169,7 +188,7 @@ void strsft(char * src, int32_t startByte, int32_t offset);
 void TERM_printBootMessage(TERMINAL_HANDLE * handle);
 void TERM_freeCommandList(TermCommandDescriptor ** cl, uint16_t length);
 uint8_t TERM_buildCMDList();
-TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint8_t minPermissionLevel, TermCommandDescriptor * head);
+TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint32_t stackSize, TermCommandDescriptor * head);
 void TERM_addCommandAC(TermCommandDescriptor * cmd, TermAutoCompHandler ACH, void * ACParams);
 unsigned TERM_isSorted(TermCommandDescriptor * a, TermCommandDescriptor * b);
 char toLowerCase(char c);

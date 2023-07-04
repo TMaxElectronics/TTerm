@@ -71,6 +71,7 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
     #endif  
     
     newHandle->echoEnabled = echoEnabled;
+    newHandle->currEchoEnabled = echoEnabled;
     newHandle->cmdListHead = cmdListHead;
     sprintf(newHandle->currUserName, "%s%s%s", TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLUE), usr, TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
     
@@ -86,9 +87,9 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
     if(!TERM_baseCMDsAdded){
         TERM_baseCMDsAdded = 1;
         
-        TERM_addCommand(CMD_help, "help", "Displays this help message", 0, &TERM_defaultList);
-        TERM_addCommand(CMD_cls, "cls", "Clears the screen", 0, &TERM_defaultList);
-        TERM_addCommand(CMD_reset, "reset", "resets the fibernet", 0, &TERM_defaultList);
+        TERM_addCommand(CMD_help, "help", "Displays this help message", configMINIMAL_STACK_SIZE + 500, &TERM_defaultList);
+        TERM_addCommand(CMD_cls, "cls", "Clears the screen",configMINIMAL_STACK_SIZE + 500, &TERM_defaultList);
+        TERM_addCommand(CMD_reset, "reset", "resets the fibernet", configMINIMAL_STACK_SIZE + 500, &TERM_defaultList);
         
         #if TERM_SUPPORT_CWD == 1
         TERM_addCommand(CMD_ls, "ls", "List directory", 0, &TERM_defaultList);
@@ -97,7 +98,7 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
         #endif  
         
       
-        TermCommandDescriptor * test = TERM_addCommand(CMD_testCommandHandler, "test", "tests stuff", 0, &TERM_defaultList);
+        TermCommandDescriptor * test = TERM_addCommand(CMD_testCommandHandler, "test", "tests stuff", configMINIMAL_STACK_SIZE + 500, &TERM_defaultList);
         head = ACL_create();
         ACL_add(head, "-ra");
         ACL_add(head, "-r");
@@ -267,10 +268,7 @@ unsigned isACIILetter(char c){
 
 void TERM_printBootMessage(TERMINAL_HANDLE * handle){
     TERM_sendVT100Code(handle, _VT100_RESET, 0); TERM_sendVT100Code(handle, _VT100_CURSOR_POS1, 0); TERM_sendVT100Code(handle, _VT100_WRAP_OFF, 0);
-    ttprintfEcho("\r\n\n\n%s\r\n", TERM_startupText1);
-    ttprintfEcho("%s\r\n", TERM_startupText2);
-    ttprintfEcho("%s\r\n", TERM_startupText3);
-    ttprintfEcho("\r\n\n%s%sWARNING%s: You are now in the FiberNet console\r\n", TERM_getVT100Code(_VT100_BACKGROUND_COLOR, _VT100_RED), TERM_getVT100Code(_VT100_BLINK, 0), TERM_getVT100Code(_VT100_RESET_ATTRIB, 0)); TERM_sendVT100Code(handle, _VT100_WRAP_ON, 0);
+    ttprintfEcho("\r\n\n\n%s\r\n", TERM_startupText);
     
     if(handle->currBufferLength == 0){
         ttprintfEcho("\r\n\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
@@ -305,52 +303,165 @@ uint8_t TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode){
 }
 
 uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
-    //ttprintfEcho("received 0x%04x\r\n", c);
+    
+    vTaskEnterCritical();
+    
+    //is a program change pending?
     if(handle->currProgram != NULL){
-        //call the handler of the current override
-        uint8_t currRetCode = (*handle->currProgram->inputHandler)(handle, c);
-        
-        (*handle->errorPrinter)(handle, currRetCode);
-        
-        if(c == 0x03){
-            ttprintfEcho("^C");
+        if(handle->currProgram->returnCode != TERM_CMD_PROC_RUNNING){
+            //current program has finished, free variables and re-enable terminal
+            vStreamBufferDelete(handle->currProgram->inputStream);
+            if(handle->currProgram->argCount != 0) vPortFree(handle->currProgram->args);
+            vPortFree(handle->currProgram->commandString);
+            vPortFree(handle->currProgram);
+
+            handle->currProgram = NULL;
+            handle->nextProgram = NULL;
+
+            //reenable echo
+            handle->currEchoEnabled = handle->echoEnabled;
+
+            //reset inputbuffer
+            handle->currBufferPosition = 0;
+            handle->currBufferLength = 0;
+            memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
+            handle->currBufferPosition = 0;
         }
-        return 1;
+        
+    }else if(handle->nextProgram != handle->currProgram){
+        //yes! what do we need to do?
+        if(handle->nextProgram == NULL){
+            //program doesn't want to be in the foreground anymore
+            
+            //reenable echo
+            handle->currEchoEnabled = handle->echoEnabled;
+            
+            //reset inputbuffer
+            handle->currBufferPosition = 0;
+            handle->currBufferLength = 0;
+            memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
+            handle->currBufferPosition = 0;
+        }else{
+            //new program wants to go into the foreground
+            //make sure no other program already is there
+            if(handle->currProgram == NULL){
+                if(handle->currProgramInputMode != INPUTMODE_GET_LINE) handle->currEchoEnabled = pdFALSE;
+                
+                //reset inputbuffer
+                handle->currBufferPosition = 0;
+                handle->currBufferLength = 0;
+                memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
+                handle->currBufferPosition = 0;
+            }
+        }
+        handle->currProgram = handle->nextProgram;
+    }
+    
+    vTaskExitCritical();
+    
+    //is a program currently in the foreground
+    if(handle->currProgram != NULL){
+        //does the input mode require any immediate action?
+        if(handle->currProgramInputMode == INPUTMODE_DIRECT){
+            //yes => send data to the queue
+            //call the handler of the current override
+            uint8_t currRetCode = (*handle->currProgram->inputHandler)(handle, c);
+
+            (*handle->errorPrinter)(handle, currRetCode);
+
+            //check for ctrl+c (kill program)
+            if(c == 0x03){
+                //jep got that, kill it
+                //TODO
+                ttprintfEcho("^C");
+            }
+            return 1;
+        }else if(handle->currProgramInputMode == INPUTMODE_NONE){
+            //yes => do nothing
+            return 1;
+        }
     }
     
     switch(c){
         case '\r':      //enter
+            //are we currently looking at a history entry?
             TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST);
             
+            //is there any data in the buffer?
             if(handle->currBufferLength != 0){
+                //send newline
                 ttprintfEcho("\r\n", handle->inputBuffer);
 
-                if(handle->historyBuffer[handle->currHistoryWritePosition] != 0){
-                    vPortFree(handle->historyBuffer[handle->currHistoryWritePosition]);
-                    handle->historyBuffer[handle->currHistoryWritePosition] = 0;
+            //is a program currently active?
+                if(handle->currProgram != NULL){
+                    //yes, don't interpret any commands or add anything to the history
+                    
+                //what action does the program want us to do?
+                    if(handle->currProgramInputMode == INPUTMODE_GET_LINE){
+                        //send data to the stream
+                        xStreamBufferSend(handle->currProgram->inputStream, handle->inputBuffer, sizeof(char) * handle->currBufferLength, 0);
+                        char temp = '\n';
+                        xStreamBufferSend(handle->currProgram->inputStream, &temp, sizeof(char), 0);
+                        
+                        handle->currBufferPosition = 0;
+                        handle->currBufferLength = 0;
+                        handle->inputBuffer[handle->currBufferPosition] = 0;
+                    }
+                }else{
+                //copy command into history
+                    //is the next position free?
+                    if(handle->historyBuffer[handle->currHistoryWritePosition] != 0){
+                        //no it already has a command in it, free that
+                        vPortFree(handle->historyBuffer[handle->currHistoryWritePosition]);
+                        handle->historyBuffer[handle->currHistoryWritePosition] = 0;
+                    }
+
+                    //allocate memory for the entry and copy the command
+                    handle->historyBuffer[handle->currHistoryWritePosition] = pvPortMalloc(handle->currBufferLength + 1);
+                    memcpy(handle->historyBuffer[handle->currHistoryWritePosition], handle->inputBuffer, handle->currBufferLength + 1);
+
+                    //increment history pointer
+                    if(++handle->currHistoryWritePosition >= TERM_HISTORYSIZE) handle->currHistoryWritePosition = 0;
+
+                    //reset history read pointer (make sure the next entry the history will show is the one just added)
+                    handle->currHistoryReadPosition = handle->currHistoryWritePosition;
+
+                //interpret and run the command
+                    uint8_t retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
+                    (*handle->errorPrinter)(handle, retCode);
+
+                    handle->currBufferPosition = 0;
+                    handle->currBufferLength = 0;
+                    handle->inputBuffer[handle->currBufferPosition] = 0;
                 }
-
-                handle->historyBuffer[handle->currHistoryWritePosition] = pvPortMalloc(handle->currBufferLength + 1);
-                memcpy(handle->historyBuffer[handle->currHistoryWritePosition], handle->inputBuffer, handle->currBufferLength + 1);
-                
-                if(++handle->currHistoryWritePosition >= TERM_HISTORYSIZE) handle->currHistoryWritePosition = 0;
-                
-                handle->currHistoryReadPosition = handle->currHistoryWritePosition;
-
-                uint8_t retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
-                (*handle->errorPrinter)(handle, retCode);
-                
-                handle->currBufferPosition = 0;
-                handle->currBufferLength = 0;
-                handle->inputBuffer[handle->currBufferPosition] = 0;
             }else{
-                ttprintfEcho("\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
+                //no data in the buffer, just send an empty line if no program is active, and a newline into the buffer otherwise
+                if(handle->currProgram != NULL){
+                    char temp = '\n';
+                    xStreamBufferSend(handle->currProgram->inputStream, &temp, sizeof(char), 0);
+                }else{
+                    ttprintfEcho("\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
+                }
             }       
             break;
             
         case 0x03:      //CTRL+c
             //TODO reset current buffer
-            ttprintfEcho("^C");
+            
+            ttprintfEcho("\n^C");
+            
+            //is there a program in the foreground?
+            if(handle->currProgram != NULL){
+                //yes :) we need to kill it
+                //TODO
+            }else{
+                handle->currBufferPosition = 0;
+                handle->currBufferLength = 0;
+                memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
+                handle->currBufferPosition = 0;
+                ttprintfEcho("\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
+            }
+            
             break;
             
         case 0x08:      //backspace (used by xTerm)
@@ -376,13 +487,23 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             break;
             
         case _VT100_KEY_END:
-            TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST);
-            //TODO move cursor to EOL
+            TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST); //is the user browsing the history right now? if so copy whatever ehs looking at to the entry buffer
+            
+            if(handle->currBufferLength > handle->currBufferPosition){
+                //move the cursor to the right position
+                TERM_sendVT100Code(handle, _VT100_CURSOR_FORWARD_BY, handle->currBufferLength - handle->currBufferPosition);
+                handle->currBufferPosition = handle->currBufferLength;
+            }
             break;
             
         case _VT100_KEY_POS1:
-            TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST);
-            //TODO move cursor to BOL
+            TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST); //is the user browsing the history right now? if so copy whatever ehs looking at to the entry buffer
+            
+            if(handle->currBufferPosition > 0){
+                //move the cursor to the right position
+                TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferPosition);
+                handle->currBufferPosition = 0;
+            }
             break;
             
         case _VT100_CURSOR_FORWARD:
@@ -406,70 +527,85 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_CURSOR_UP:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
             
-            do{
-                if(--handle->currHistoryReadPosition >= TERM_HISTORYSIZE) handle->currHistoryReadPosition = TERM_HISTORYSIZE - 1;
-                
-                if(handle->historyBuffer[handle->currHistoryReadPosition] != 0){
-                    break;
+            //is there a program in the foreground?
+            if(handle->currProgram == NULL){
+                //no, do history lookup
+                do{
+                    if(--handle->currHistoryReadPosition >= TERM_HISTORYSIZE) handle->currHistoryReadPosition = TERM_HISTORYSIZE - 1;
+
+                    if(handle->historyBuffer[handle->currHistoryReadPosition] != 0){
+                        break;
+                    }
+                }while(handle->currHistoryReadPosition != handle->currHistoryWritePosition);
+
+                //print out the command at the current history read position
+                if(handle->currHistoryReadPosition == handle->currHistoryWritePosition){
+                    ttprintfEcho("\x07");   //rings a bell doesn't it?                                                      
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+                }else{
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->historyBuffer[handle->currHistoryReadPosition]);
                 }
-            }while(handle->currHistoryReadPosition != handle->currHistoryWritePosition);
-            
-            //print out the command at the current history read position
-            if(handle->currHistoryReadPosition == handle->currHistoryWritePosition){
-                ttprintfEcho("\x07");   //rings a bell doesn't it?                                                      
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
-            }else{
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->historyBuffer[handle->currHistoryReadPosition]);
             }
+                
             break;
             
         case _VT100_CURSOR_DOWN:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
             
-            while(handle->currHistoryReadPosition != handle->currHistoryWritePosition){
-                if(++handle->currHistoryReadPosition >= TERM_HISTORYSIZE) handle->currHistoryReadPosition = 0;
-                
-                if(handle->historyBuffer[handle->currHistoryReadPosition] != 0){
-                    break;
+            //is there a program in the foreground?
+            if(handle->currProgram == NULL){
+                //no, do history lookup
+                while(handle->currHistoryReadPosition != handle->currHistoryWritePosition){
+                    if(++handle->currHistoryReadPosition >= TERM_HISTORYSIZE) handle->currHistoryReadPosition = 0;
+
+                    if(handle->historyBuffer[handle->currHistoryReadPosition] != 0){
+                        break;
+                    }
+                }
+
+                //print out the command at the current history read position
+                if(handle->currHistoryReadPosition == handle->currHistoryWritePosition){
+                    ttprintfEcho("\x07");   //rings a bell doesn't it?                                                      
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+                }else{
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->historyBuffer[handle->currHistoryReadPosition]);
                 }
             }
             
-            //print out the command at the current history read position
-            if(handle->currHistoryReadPosition == handle->currHistoryWritePosition){
-                ttprintfEcho("\x07");   //rings a bell doesn't it?                                                      
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
-            }else{
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->historyBuffer[handle->currHistoryReadPosition]);
-            }
             break;
             
         case '\t':      //tab
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
             
-            if(handle->autocompleteBuffer == NULL){ 
-                TERM_doAutoComplete(handle);
-            }
+            //is there a program in the foreground?
+            if(handle->currProgram == NULL){
+                //no, do autocomplete
             
-            if(++handle->currAutocompleteCount > handle->autocompleteBufferLength) handle->currAutocompleteCount = 0;
-            
-            if(handle->currAutocompleteCount == 0){
-                ttprintfEcho("\x07");
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
-            }else{
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                unsigned printQuotationMarks = strchr(handle->autocompleteBuffer[handle->currAutocompleteCount - 1], ' ') != 0;
-                volatile TERMINAL_HANDLE * temp = handle;
-                
-                //workaround for inconsistent printf behaviour when using %.*s with length 0
-                if(handle->autocompleteStart == 0){
-                    ttprintfEcho(printQuotationMarks ? "\r%s@%s>\"%s\"" : "\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+                if(handle->autocompleteBuffer == NULL){ 
+                    TERM_doAutoComplete(handle);
+                }
+
+                if(++handle->currAutocompleteCount > handle->autocompleteBufferLength) handle->currAutocompleteCount = 0;
+
+                if(handle->currAutocompleteCount == 0){
+                    ttprintfEcho("\x07");
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
                 }else{
-                    ttprintfEcho(printQuotationMarks ? "\r%s@%s>%.*s\"%s\"" : "\r%s@%s>%.*s%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteStart, handle->inputBuffer, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    unsigned printQuotationMarks = strchr(handle->autocompleteBuffer[handle->currAutocompleteCount - 1], ' ') != 0;
+                    volatile TERMINAL_HANDLE * temp = handle;
+
+                    //workaround for inconsistent printf behaviour when using %.*s with length 0
+                    if(handle->autocompleteStart == 0){
+                        ttprintfEcho(printQuotationMarks ? "\r%s@%s>\"%s\"" : "\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+                    }else{
+                        ttprintfEcho(printQuotationMarks ? "\r%s@%s>%.*s\"%s\"" : "\r%s@%s>%.*s%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteStart, handle->inputBuffer, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+                    }
                 }
             }
             break;
@@ -477,31 +613,45 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_BACKWARDS_TAB:
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
             
-            if(handle->autocompleteBuffer == NULL){ 
-                TERM_doAutoComplete(handle);
-            }
-            
-            if(--handle->currAutocompleteCount > handle->autocompleteBufferLength - 1) handle->currAutocompleteCount = handle->autocompleteBufferLength - 1;
-            
-            if(handle->currAutocompleteCount == 0){
-                ttprintfEcho("\x07");
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
-            }else{
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
-                unsigned printQuotationMarks = strchr(handle->autocompleteBuffer[handle->currAutocompleteCount - 1], ' ') != 0;
-                ttprintfEcho(printQuotationMarks ? "\r%s@%s>%.*s\"%s\"" : "\r%s@%s>%.*s%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteStart, handle->inputBuffer, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+            //is there a program in the foreground?
+            if(handle->currProgram == NULL){
+                //no, do autocomplete
+                
+                if(handle->autocompleteBuffer == NULL){ 
+                    TERM_doAutoComplete(handle);
+                }
+
+                if(--handle->currAutocompleteCount > handle->autocompleteBufferLength - 1) handle->currAutocompleteCount = handle->autocompleteBufferLength - 1;
+
+                if(handle->currAutocompleteCount == 0){
+                    ttprintfEcho("\x07");
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+                }else{
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                    unsigned printQuotationMarks = strchr(handle->autocompleteBuffer[handle->currAutocompleteCount - 1], ' ') != 0;
+                    ttprintfEcho(printQuotationMarks ? "\r%s@%s>%.*s\"%s\"" : "\r%s@%s>%.*s%s", handle->currUserName, TERM_DEVICE_NAME, handle->autocompleteStart, handle->inputBuffer, handle->autocompleteBuffer[handle->currAutocompleteCount - 1]);
+                }
             }
             break;
             
         case _VT100_RESET:
-            TERM_printBootMessage(handle);
+            
+            //is there a program in the foreground?
+            if(handle->currProgram != NULL){
+                //yes :) we need to kill it to reset the terminal to its default state
+                //TODO
+            }else{
+                TERM_printBootMessage(handle);
+            }
             break;
            
-        case 32 ... 126:
+        case 32 ... 126: //normal letter
             TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST);
             
             //TODO check for string length overflow
+            
+            //this needs to happen even when a program is active
             
             if(handle->inputBuffer[handle->currBufferPosition] != 0){      //check if we are at the end of our command
                 strsft(handle->inputBuffer, handle->currBufferPosition, 1);   
@@ -602,6 +752,136 @@ TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle){
     return NULL;
 }
 
+static void TERM_programEnterForeground(TermProgram * prog){
+    //is a program already in the foreground? if so just ignore the request
+    if(prog->handle->currProgram != NULL || prog->handle->nextProgram != NULL) return 0;
+   
+    //assign next program pointer
+    prog->handle->nextProgram = prog;
+}
+
+uint32_t TERM_programExitForeground(TermProgram * prog){
+    vTaskEnterCritical();
+    //is a program already in the foreground? if so just ignore the request
+    if(prog->handle->currProgram != prog || (prog->handle->nextProgram != NULL && prog->handle->nextProgram != prog)){ 
+        vTaskExitCritical();
+        return 0;
+    }
+   
+    //assign next program pointer
+    prog->handle->nextProgram = NULL;
+    vTaskExitCritical();
+}
+
+static void TERM_programReturn(TermProgram * prog, uint8_t retCode){
+    vTaskEnterCritical();
+    //try to exit foreground if we are there
+    //TODO catch case where we get called with retCode = TERM_CMD_PROC_RUNNING this would cause a memleak
+    prog->returnCode = retCode;
+    
+    TERMINAL_HANDLE * handle = prog->handle;
+    ttprintf("Command %s finished with code %d\r\n", prog->cmd->command, retCode);
+    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+    
+    //try to exit foreground
+    if(!TERM_programExitForeground(prog)){
+        //didn't work, we aren't in foreground
+        
+        //make sure we won't leak memory :)
+        vStreamBufferDelete(prog->inputStream);
+        if(prog->argCount != 0) vPortFree(prog->args);
+        vPortFree(prog->commandString);
+        vPortFree(prog);
+        
+        //and also make sure we weren't just about to get called
+        prog->handle->nextProgram = NULL;
+    }
+    
+    vTaskExitCritical();
+}
+
+static void TERM_cmdTask(void * pvData){
+    //prepare data
+    TermProgram *prog = (TermProgram *) pvData;
+    uint8_t retCode = TERM_CMD_EXIT_ERROR;
+    
+    TERM_programEnterForeground(prog);
+    
+    //run command
+    if(prog->cmd->function != 0){
+        retCode = (*prog->cmd->function)(prog->handle, prog->argCount, prog->args);
+    }
+    
+    TERM_programReturn(prog, retCode);
+    
+    //remove task
+    vTaskDelete(NULL);
+    while(1);
+}
+
+char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
+    vTaskEnterCritical();
+    //check if the task calling this function belongs to the program currently in the foreground
+    
+    //this is hacky :( I don't want to add a TermProgram* to the command funciton, as that would mean I'd need to change each and every command I wrote so far
+    //the solition: check if there is a program in the foreground, if so check if the task associated with it is ours.
+    TaskHandle_t targetTask = NULL;
+    TermProgram * prog = NULL;
+    if(handle->currProgram != NULL){
+        prog = handle->currProgram;
+        targetTask = handle->currProgram->task;
+    }else if(handle->nextProgram != NULL){
+        prog = handle->nextProgram;
+        targetTask = handle->nextProgram->task;
+    }
+    
+    if(targetTask != xTaskGetCurrentTaskHandle()){
+        //hmm task requesting a string is not currently in the foreground, we have to return NULL
+        return NULL;
+    }
+    
+    //cool our task is the active one, now make sure to set the terminal capture mode
+    handle->currProgramInputMode = INPUTMODE_GET_LINE;
+    
+    //finally empty out the input buffer
+    xStreamBufferReset(prog->inputStream);
+    
+    vTaskExitCritical();
+    
+    //now wait for the string to be read. Terminal will dump the string including a "\n" termination into the input stream
+    char * ret = pvPortMalloc(sizeof(char) * TERM_INPUTBUFFER_SIZE);
+    char c = 0;
+    uint32_t currPos = 0;
+    while(1){
+        if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) == 0){
+            c = 0xff;
+            break;
+        }else{
+            if(c == '\n'){ 
+                //terminate string
+                ret[currPos] = 0;
+                break;
+            }else{
+                ret[currPos++] = c;
+            }
+            if(currPos == TERM_INPUTBUFFER_SIZE){ 
+                //terminate string
+                ret[currPos-1] = 0;
+                return ret;
+            }
+        }
+    }    
+   
+    
+    if(c == 0xff){
+        //timeout
+        vPortFree(ret);
+        return NULL;
+    }
+    
+    return ret;
+}
+
 uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * handle){
     
     TermCommandDescriptor * cmd = TERM_findCMD(handle);
@@ -612,21 +892,57 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
             ttprintfEcho("\r\nError: unclosed string literal in command\r\n");
             return TERM_CMD_EXIT_ERROR;
         }
-
+        
+        char * dataPtr;
+        
+#ifdef TERM_startTaskPerCommand
+        //allocate persistent memory for args and copy them
+        dataPtr = pvPortMalloc(dataLength + 1);
+        dataPtr[dataLength] = 0; //we only need to set the string terminator to 0, the rest will be set by memcpy
+        memcpy(dataPtr, data, dataLength);
+#else
+        //just assign the data pointer to the data
+        dataPtr = data;
+#endif
+        
+        //seperate the arguments. The pointer returned is going to contain pointers to parts of the dataPrt array
         char ** args = 0;
         if(argCount != 0){
             args = pvPortMalloc(sizeof(char*) * argCount);
-            TERM_seperateArgs(data, dataLength, args);
+            TERM_seperateArgs(dataPtr, dataLength, args);
         }
-
+        
+#ifdef TERM_startTaskPerCommand
+        TermProgram * program = pvPortMalloc(sizeof(TermProgram));
+        memset(program, 0, sizeof(TermProgram));
+        
+        //assign data pointers
+        program->argCount = argCount;
+        program->commandString = dataPtr;
+        program->args = args;
+        
+        //assign command info
+        program->cmd = cmd;
+        program->handle = handle;
+        
+        program->returnCode = TERM_CMD_PROC_RUNNING;
+        
+        program->inputStream = xStreamBufferCreate(TERM_PROG_BUFFER_SIZE,1);
+        
+        if(xTaskCreate(TERM_cmdTask, cmd->command, cmd->stackSize, (void*) program, tskIDLE_PRIORITY + 1, &program->task) == pdPASS){
+            return TERM_CMD_EXIT_PROC_STARTED;
+        }else{
+            return TERM_CMD_EXIT_ERROR;
+        }
+#else
         uint8_t retCode = TERM_CMD_EXIT_ERROR;
         if(cmd->function != 0){
-            configASSERT((cmd->function > 0x9d000000) && (cmd->function < 0x9d100000));
             retCode = (*cmd->function)(handle, argCount, args);
         }
 
         if(argCount != 0) vPortFree(args);
         return retCode;
+#endif      
     }
     
     return TERM_CMD_EXIT_NOT_FOUND;
@@ -726,7 +1042,7 @@ void TERM_freeCommandList(TermCommandDescriptor ** cl, uint16_t length){
     vPortFree(cl);
 }
 
-TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint8_t minPermissionLevel, TermCommandDescriptor * head){
+TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint32_t stackSize, TermCommandDescriptor * head){
     //if(head == NULL) head = TERM_defaultList;
         
     if(head->commandLength == 0xff) return 0;
@@ -737,8 +1053,14 @@ TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char
     newCMD->commandDescription = description;
     newCMD->commandLength = strlen(command);
     newCMD->function = function;
-    newCMD->minPermissionLevel = minPermissionLevel;
     newCMD->ACHandler = 0;
+    
+#ifdef TERM_startTaskPerCommand
+    
+    //TODO add default stack size define
+    newCMD->stackSize = (stackSize == 0) ? configMINIMAL_STACK_SIZE + 500 : stackSize;
+    
+#endif
     
     TERM_LIST_add(newCMD, head);
     return newCMD;
@@ -1058,8 +1380,9 @@ const char * TERM_getVT100Code(uint16_t cmd, uint8_t var){
 }
 
 void TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog){
-    handle->currProgram = prog;
-    handle->currProgram->inputStream = xStreamBufferCreate(TERM_PROG_BUFFER_SIZE,1);
+    ttprintf("INVALD SHIT CALLED OIufhglifdoifd :(\r\n\n");
+    //handle->currProgram = prog;
+    //handle->currProgram->inputStream = xStreamBufferCreate(TERM_PROG_BUFFER_SIZE,1);
 }
 
 void TERM_removeProgramm(TERMINAL_HANDLE * handle){
@@ -1086,10 +1409,3 @@ void TERM_killProgramm(TERMINAL_HANDLE * handle){
         vTaskDelay(100);
     }
 }
-
-
-#ifdef TERM_ENABLE_STARTUP_TEXT
-const char TERM_startupText1[] = "\r\n   _/    _/  _/_/_/    _/_/_/        _/_/_/_/  _/  _/                            _/      _/              _/      \r\n  _/    _/  _/    _/        _/      _/            _/_/_/      _/_/    _/  _/_/  _/_/    _/    _/_/    _/_/_/_/   ";
-const char TERM_startupText2[] = " _/    _/  _/    _/    _/_/        _/_/_/    _/  _/    _/  _/_/_/_/  _/_/      _/  _/  _/  _/_/_/_/    _/        \r\n_/    _/  _/    _/        _/      _/        _/  _/    _/  _/        _/        _/    _/_/  _/          _/         ";
-const char TERM_startupText3[] = " _/_/    _/_/_/    _/_/_/        _/        _/  _/_/_/      _/_/_/  _/        _/      _/    _/_/_/      _/_/   ";
-#endif   

@@ -77,6 +77,36 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("missing ACL element value for option \"-aa\"\r\n");
                 returnCode = TERM_CMD_EXIT_ERROR;
             }
+        }else if(strcmp(args[currArg], "-i") == 0){
+            ttprintf("testing reading of input:\r\n");
+            ttprintf("please enter your name:"); 
+            char * name = ttgetline();
+            ttprintf(" ok!\r\n");
+            ttprintf("Hello %s :)\r\n", name);
+            vPortFree(name);
+            returnCode = TERM_CMD_EXIT_SUCCESS;
+        }else if(strcmp(args[currArg], "-iI") == 0){
+            uint32_t chip = 0;
+            ttprintf("What is the number of the SID Chip the C64 (MOSxxxx)?\r\n>"); 
+            while(1){
+                char * id = ttgetline();
+                ttprintf("\r\n");
+                chip = atoi(id);
+                vPortFree(id);
+                if(chip == 6581 || chip == 8580 || chip == 42){
+                    break;
+                }else{
+                    ttprintf("wrooong, try again\r\n>");
+                }
+            }
+            
+            if(chip == 42) {
+                ttprintf("damn it... its wrong but of course 42 is a solution to the question... bugger off\r\n");
+            } else{
+                ttprintf("correct! you may now leave :D\r\n");
+            }
+            
+            returnCode = TERM_CMD_EXIT_SUCCESS;
         }
     }
     if(returnCode != 0) return returnCode;

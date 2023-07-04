@@ -22,11 +22,12 @@
 */
 
 #include "TTerm.h"
-#if TERM_SUPPORT_CWD == 1
+#ifdef TERM_SUPPORT_CWD
 
 #include "TTerm_cwd.h"
-#include "FreeRTOS.h"
 #include "ff.h"
+
+#include "FreeRTOS.h"
 #include <string.h>
 
 #define BUFFER_SIZE 255
