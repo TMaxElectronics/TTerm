@@ -26,6 +26,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 #include "stream_buffer.h"
 
 #include "TTerm_VT100.h"
@@ -106,8 +107,7 @@ typedef struct{
     TaskHandle_t task;
     TermCommandInputHandler inputHandler;
     StreamBufferHandle_t inputStream;
-    
-    uint32_t returnCode;
+    QueueHandle_t cmdStream;
     
     TermCommandDescriptor * cmd;
     TERMINAL_HANDLE * handle;
@@ -116,11 +116,13 @@ typedef struct{
     uint8_t argCount;
 } TermProgram;
 
+typedef enum {PROG_RETURN, PROG_SETINPUTMODE, PROG_ENTERFOREGROUND, PROG_EXITFOREGROUND, PROG_KILL} ProgCMDType_t;
 typedef struct{
-    enum {TYPE_CHAR, TYPE_STRING} type : 8;
-    uint32_t size : 24;
-    void * data;
-} LineData;
+    ProgCMDType_t   cmd;
+    uint32_t        arg;
+    TermProgram *   src;
+    void *          data;
+} Term_progCMD_t;
 
 struct __TermCommandDescriptor__{
     TermCommandFunction function;
@@ -161,7 +163,9 @@ struct __TERMINAL_HANDLE__{
     unsigned currEchoEnabled;
     TermCommandDescriptor * cmdListHead;
     TermErrorPrinter errorPrinter;
-//TODO actually finish implementing this...
+    
+    QueueHandle_t cmdStream;
+    
 #if TERM_SUPPORT_CWD == 1
     //DIR cwd;
     char * cwdPath;

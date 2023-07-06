@@ -32,6 +32,7 @@
 #include "apps.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 #include "stream_buffer.h"
 #include "UART.h"
 #include "TTerm.h"
@@ -69,6 +70,10 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
     #if EXTENDED_PRINTF == 1
     newHandle->port = port;
     #endif  
+
+#ifdef TERM_startTaskPerCommand
+    newHandle->cmdStream = xQueueCreate(16, sizeof(Term_progCMD_t));
+#endif
     
     newHandle->echoEnabled = echoEnabled;
     newHandle->currEchoEnabled = echoEnabled;
@@ -302,77 +307,118 @@ uint8_t TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode){
     return 0;
 }
 
+static void resetInputBuffer(TERMINAL_HANDLE * handle){//reset inputbuffer
+    handle->currBufferPosition = 0;
+    handle->currBufferLength = 0;
+    memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
+    handle->currBufferPosition = 0;
+}
+
 uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
     
-    vTaskEnterCritical();
-    
-    //is a program change pending?
-    if(handle->currProgram != NULL){
-        if(handle->currProgram->returnCode != TERM_CMD_PROC_RUNNING){
-            //current program has finished, free variables and re-enable terminal
-            vStreamBufferDelete(handle->currProgram->inputStream);
-            if(handle->currProgram->argCount != 0) vPortFree(handle->currProgram->args);
-            vPortFree(handle->currProgram->commandString);
-            vPortFree(handle->currProgram);
-
-            handle->currProgram = NULL;
-            handle->nextProgram = NULL;
-
-            //reenable echo
-            handle->currEchoEnabled = handle->echoEnabled;
-
-            //reset inputbuffer
-            handle->currBufferPosition = 0;
-            handle->currBufferLength = 0;
-            memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
-            handle->currBufferPosition = 0;
-        }
+    //check if we have any program commands to process (that could be enterForeground, exitForeground, return etc.)
+    Term_progCMD_t currProgCMD;
+    while(xQueueReceive(handle->cmdStream, &currProgCMD, 0)){
+        //weeee goooot ooneee ;)
         
-    }else if(handle->nextProgram != handle->currProgram){
-        //yes! what do we need to do?
-        if(handle->nextProgram == NULL){
-            //program doesn't want to be in the foreground anymore
-            
-            //reenable echo
-            handle->currEchoEnabled = handle->echoEnabled;
-            
-            //reset inputbuffer
-            handle->currBufferPosition = 0;
-            handle->currBufferLength = 0;
-            memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
-            handle->currBufferPosition = 0;
-        }else{
-            //new program wants to go into the foreground
-            //make sure no other program already is there
-            if(handle->currProgram == NULL){
-                if(handle->currProgramInputMode != INPUTMODE_GET_LINE) handle->currEchoEnabled = pdFALSE;
+        //which command did we get?
+        switch(currProgCMD.cmd){
+            case PROG_RETURN:
+                //a program wants to return
                 
-                //reset inputbuffer
-                handle->currBufferPosition = 0;
-                handle->currBufferLength = 0;
-                memset(handle->inputBuffer, 0, TERM_INPUTBUFFER_SIZE);
-                handle->currBufferPosition = 0;
-            }
+                //is it currently in the foreground?
+                if(handle->currProgram == currProgCMD.src){
+                    //yes, we'll have to remove it from the foreground
+                    
+                    //reenable echo if it was on before
+                    handle->currEchoEnabled = handle->echoEnabled;
+                    
+                    //remove currProgram
+                    handle->currProgram = NULL;
+                    
+                    //reset buffer
+                    resetInputBuffer(handle);
+                }
+                
+                //free the data. This needs to happen here, as this is the last place in the code the data is accessed after program exit
+                vStreamBufferDelete(currProgCMD.src->inputStream);
+                vQueueDelete(currProgCMD.src->cmdStream);
+                if(currProgCMD.src->argCount != 0) vPortFree(currProgCMD.src->args);
+                vPortFree(currProgCMD.src->commandString);
+                vPortFree(currProgCMD.src);
+
+                break;
+                
+            case PROG_SETINPUTMODE:
+                //input mode change requested.
+                
+                //is the program even in the foreground?
+                if(handle->currProgram == currProgCMD.src){
+                    //yes, oblige the request
+                    
+                    //is the new inputmode getLine?
+                    if(currProgCMD.arg == INPUTMODE_GET_LINE){
+                        //yes, empty out the line buffer
+                        resetInputBuffer(handle);
+                    }
+
+                    //assign new inputmode
+                    handle->currProgramInputMode = currProgCMD.arg;
+                } else{
+                    //lol no, it doesn't have a say in the matter...
+                    
+                    //is the reuested inputmode getLine?
+                    if(currProgCMD.arg == INPUTMODE_GET_LINE){
+                        //yes, task might be waiting for a line of data in the inputBuffer, Send an empty one to make sure it won't get stuck doing nothing
+                        xStreamBufferSend(currProgCMD.src->inputStream, "\n", sizeof(char), 0);
+                    }
+                }
+                
+                break;
+                
+            case PROG_ENTERFOREGROUND:
+                //program wants to go into the foreground
+                
+                //is another program already in the foreground?
+                if(handle->currProgram != NULL){
+                    //yes, we can't put another one there
+                }else{
+                    //no, all good
+                    //set currProgram
+                    handle->currProgram = currProgCMD.src;
+                    
+                    //reset inputmode
+                    handle->currProgramInputMode = INPUTMODE_DIRECT;
+                }
+                
+                break;
+                
+            case PROG_EXITFOREGROUND:
+                //reenable echo
+                handle->currEchoEnabled = handle->echoEnabled;
+                
+                //remove program
+                handle->currProgram = NULL;
+                
+                break;
+                
+            case PROG_KILL:
+                //do nothing, this isn't a valid command for the interpreter
+                break;
         }
-        handle->currProgram = handle->nextProgram;
     }
-    
-    vTaskExitCritical();
     
     //is a program currently in the foreground
     if(handle->currProgram != NULL){
         //does the input mode require any immediate action?
         if(handle->currProgramInputMode == INPUTMODE_DIRECT){
             //yes => send data to the queue
-            //call the handler of the current override
-            uint8_t currRetCode = (*handle->currProgram->inputHandler)(handle, c);
-
-            (*handle->errorPrinter)(handle, currRetCode);
+            xStreamBufferSend(handle->currProgram->inputStream, &c, sizeof(c), 0);
 
             //check for ctrl+c (kill program)
             if(c == 0x03){
                 //jep got that, kill it
-                //TODO
+                //TODO, maybe also add hardkill if ctrl+c is pressed multiple times
                 ttprintfEcho("^C");
             }
             return 1;
@@ -381,6 +427,8 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             return 1;
         }
     }
+    
+    vTaskEnterCritical();
     
     switch(c){
         case '\r':      //enter
@@ -392,20 +440,15 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                 //send newline
                 ttprintfEcho("\r\n", handle->inputBuffer);
 
-            //is a program currently active?
+                //is a program currently active?
                 if(handle->currProgram != NULL){
                     //yes, don't interpret any commands or add anything to the history
                     
-                //what action does the program want us to do?
+                    //what action does the program want us to do?
                     if(handle->currProgramInputMode == INPUTMODE_GET_LINE){
                         //send data to the stream
                         xStreamBufferSend(handle->currProgram->inputStream, handle->inputBuffer, sizeof(char) * handle->currBufferLength, 0);
-                        char temp = '\n';
-                        xStreamBufferSend(handle->currProgram->inputStream, &temp, sizeof(char), 0);
-                        
-                        handle->currBufferPosition = 0;
-                        handle->currBufferLength = 0;
-                        handle->inputBuffer[handle->currBufferPosition] = 0;
+                        xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
                     }
                 }else{
                 //copy command into history
@@ -429,16 +472,15 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                 //interpret and run the command
                     uint8_t retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
                     (*handle->errorPrinter)(handle, retCode);
-
-                    handle->currBufferPosition = 0;
-                    handle->currBufferLength = 0;
-                    handle->inputBuffer[handle->currBufferPosition] = 0;
                 }
+
+                handle->currBufferPosition = 0;
+                handle->currBufferLength = 0;
+                handle->inputBuffer[handle->currBufferPosition] = 0;
             }else{
                 //no data in the buffer, just send an empty line if no program is active, and a newline into the buffer otherwise
                 if(handle->currProgram != NULL){
-                    char temp = '\n';
-                    xStreamBufferSend(handle->currProgram->inputStream, &temp, sizeof(char), 0);
+                    xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
                 }else{
                     ttprintfEcho("\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
                 }
@@ -675,6 +717,8 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             TERM_printDebug(handle, "unknown code received: 0x%02x\r\n", c);
             break;
     }
+    
+    vTaskExitCritical();
 }
 
 void TERM_checkForCopy(TERMINAL_HANDLE * handle, COPYCHECK_MODE mode){
@@ -752,52 +796,38 @@ TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle){
     return NULL;
 }
 
+//sends a program command to the interpreter
+static uint32_t TERM_sendProgCMD(TermProgram * prog, ProgCMDType_t cmd, uint32_t arg, void * data){
+    Term_progCMD_t cmdStruct = {.cmd = cmd, .arg = arg, .data = data, .src = prog};
+    return xQueueSend(prog->handle->cmdStream, &cmdStruct, 0);
+}
+
+//also sends a program command to the interpreter, but waits indefinetely until it fit into the queue isntead of discarding it if the queue is full
+static uint32_t TERM_sendCriticalProgCMD(TermProgram * prog, ProgCMDType_t cmd, uint32_t arg, void * data){
+    Term_progCMD_t cmdStruct = {.cmd = cmd, .arg = arg, .data = data, .src = prog};
+    return xQueueSend(prog->handle->cmdStream, &cmdStruct, portMAX_DELAY);
+}
+
 static void TERM_programEnterForeground(TermProgram * prog){
-    //is a program already in the foreground? if so just ignore the request
-    if(prog->handle->currProgram != NULL || prog->handle->nextProgram != NULL) return 0;
-   
-    //assign next program pointer
-    prog->handle->nextProgram = prog;
+    TERM_sendProgCMD(prog, PROG_ENTERFOREGROUND, 0, 0);
 }
 
 uint32_t TERM_programExitForeground(TermProgram * prog){
-    vTaskEnterCritical();
-    //is a program already in the foreground? if so just ignore the request
-    if(prog->handle->currProgram != prog || (prog->handle->nextProgram != NULL && prog->handle->nextProgram != prog)){ 
-        vTaskExitCritical();
-        return 0;
-    }
-   
-    //assign next program pointer
-    prog->handle->nextProgram = NULL;
-    vTaskExitCritical();
+    TERM_sendProgCMD(prog, PROG_EXITFOREGROUND, 0, 0);
 }
 
 static void TERM_programReturn(TermProgram * prog, uint8_t retCode){
-    vTaskEnterCritical();
-    //try to exit foreground if we are there
-    //TODO catch case where we get called with retCode = TERM_CMD_PROC_RUNNING this would cause a memleak
-    prog->returnCode = retCode;
-    
+    //print return string and inputbuffer if its not empty
     TERMINAL_HANDLE * handle = prog->handle;
-    ttprintf("Command %s finished with code %d\r\n", prog->cmd->command, retCode);
-    ttprintfEcho("\r%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+    (*handle->errorPrinter)(handle, retCode);
     
-    //try to exit foreground
-    if(!TERM_programExitForeground(prog)){
-        //didn't work, we aren't in foreground
-        
-        //make sure we won't leak memory :)
-        vStreamBufferDelete(prog->inputStream);
-        if(prog->argCount != 0) vPortFree(prog->args);
-        vPortFree(prog->commandString);
-        vPortFree(prog);
-        
-        //and also make sure we weren't just about to get called
-        prog->handle->nextProgram = NULL;
+    if(handle->currBufferLength != 0){
+        ttprintfEcho("%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+        if(handle->inputBuffer[handle->currBufferPosition] != 0) TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferLength - handle->currBufferPosition);
     }
     
-    vTaskExitCritical();
+    //return terminal (automatically frees memory and exits foreground if needed)
+    TERM_sendProgCMD(prog, PROG_RETURN, retCode, 0);
 }
 
 static void TERM_cmdTask(void * pvData){
@@ -820,33 +850,16 @@ static void TERM_cmdTask(void * pvData){
 }
 
 char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
-    vTaskEnterCritical();
-    //check if the task calling this function belongs to the program currently in the foreground
+    //get prog pointer
+    TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
     
-    //this is hacky :( I don't want to add a TermProgram* to the command funciton, as that would mean I'd need to change each and every command I wrote so far
-    //the solition: check if there is a program in the foreground, if so check if the task associated with it is ours.
-    TaskHandle_t targetTask = NULL;
-    TermProgram * prog = NULL;
-    if(handle->currProgram != NULL){
-        prog = handle->currProgram;
-        targetTask = handle->currProgram->task;
-    }else if(handle->nextProgram != NULL){
-        prog = handle->nextProgram;
-        targetTask = handle->nextProgram->task;
-    }
-    
-    if(targetTask != xTaskGetCurrentTaskHandle()){
-        //hmm task requesting a string is not currently in the foreground, we have to return NULL
-        return NULL;
-    }
-    
-    //cool our task is the active one, now make sure to set the terminal capture mode
-    handle->currProgramInputMode = INPUTMODE_GET_LINE;
-    
-    //finally empty out the input buffer
+    //empty out the input buffer
     xStreamBufferReset(prog->inputStream);
     
-    vTaskExitCritical();
+    //request input mode of GETLINE from the interpreter
+    if(!TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_GET_LINE, NULL)){
+        return NULL;
+    }
     
     //now wait for the string to be read. Terminal will dump the string including a "\n" termination into the input stream
     char * ret = pvPortMalloc(sizeof(char) * TERM_INPUTBUFFER_SIZE);
@@ -867,6 +880,10 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
             if(currPos == TERM_INPUTBUFFER_SIZE){ 
                 //terminate string
                 ret[currPos-1] = 0;
+                
+                //reset inputmode
+                TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
+                
                 return ret;
             }
         }
@@ -876,8 +893,15 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
     if(c == 0xff){
         //timeout
         vPortFree(ret);
+        
+        //reset inputmode
+        TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
+        
         return NULL;
     }
+    
+    //reset inputmode
+    TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
     
     return ret;
 }
@@ -925,9 +949,10 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
         program->cmd = cmd;
         program->handle = handle;
         
-        program->returnCode = TERM_CMD_PROC_RUNNING;
+        //program->returnCode = TERM_CMD_PROC_RUNNING;
         
         program->inputStream = xStreamBufferCreate(TERM_PROG_BUFFER_SIZE,1);
+        program->cmdStream = xQueueCreate(5, sizeof(Term_progCMD_t));
         
         if(xTaskCreate(TERM_cmdTask, cmd->command, cmd->stackSize, (void*) program, tskIDLE_PRIORITY + 1, &program->task) == pdPASS){
             return TERM_CMD_EXIT_PROC_STARTED;
