@@ -39,10 +39,10 @@
 
 
 static const char top_sortingNamesPointers[][16] = {"none", "pid", "name", "CPU load", "total runtime", "stack usage", "heap usage"};
+static TaskStatus_t ** createSortedList(TaskStatus_t * pxTaskStatusArray, uint32_t taskCount, uint32_t mode);
+static int32_t compareTasks(TaskStatus_t * a, TaskStatus_t * b, uint32_t mode);
 
 static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args);
-void TASK_main(void *pvParameters);
-uint8_t INPUT_handler(TERMINAL_HANDLE * handle, uint16_t c);
 
 uint8_t REGISTER_top(TermCommandDescriptor * desc){
     TERM_addCommand(CMD_main, APP_NAME, APP_DESCRIPTION, 0, desc); 
@@ -52,26 +52,124 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
     uint8_t currArg = 0;
     uint8_t returnCode = TERM_CMD_EXIT_SUCCESS;
     
-    char ** cpy_args;
-    argCount++;
-    if(argCount){
-        cpy_args = pvPortMalloc(sizeof(char*)*argCount);
-        cpy_args[0] = pvPortMalloc(sizeof(APP_NAME));
-        cpy_args[0]=memcpy(cpy_args[0], APP_NAME, sizeof(APP_NAME));
-        for(;currArg<argCount-1; currArg++){
-            uint16_t len = strlen(args[currArg])+1;
-            cpy_args[currArg+1] = pvPortMalloc(len);
-            memcpy(cpy_args[currArg+1], args[currArg], len);
-        }
-    }
-    
-    TermProgram * prog = pvPortMalloc(sizeof(TermProgram));
-    prog->inputHandler = INPUT_handler;
-    prog->args = cpy_args;
-    prog->argCount = argCount;
     TERM_sendVT100Code(handle, _VT100_RESET, 0); TERM_sendVT100Code(handle, _VT100_CURSOR_POS1, 0);
-    returnCode = xTaskCreate(TASK_main, APP_NAME, APP_STACK, handle, tskIDLE_PRIORITY + 1, &prog->task) ? TERM_CMD_EXIT_PROC_STARTED : TERM_CMD_EXIT_ERROR;
-    if(returnCode == TERM_CMD_EXIT_PROC_STARTED) TERM_attachProgramm(handle, prog);
+    
+    uint32_t currSortingMode = 0;
+    char c=0;
+    do{
+        
+        TaskStatus_t * taskStats;
+        uint32_t taskCount = uxTaskGetNumberOfTasks();
+        uint32_t sysTime;
+                
+        taskStats = pvPortMalloc( taskCount * sizeof( TaskStatus_t ) );
+        if(taskStats){
+            taskCount = uxTaskGetSystemState(taskStats, taskCount, &sysTime);
+            
+            TERM_sendVT100Code(handle, _VT100_CURSOR_POS1, 0);
+        
+            uint32_t cpuLoad = SYS_getCPULoadFine(taskStats, taskCount, sysTime);
+            ttprintf("%sbottom - %d\r\n%sTasks: \t%d\r\n%sCPU: \t%d,%d%%\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), xTaskGetTickCount(), TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), taskCount, TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), cpuLoad / 10, cpuLoad % 10);
+            
+            uint32_t heapRemaining = xPortGetFreeHeapSize();
+            ttprintf("%sMem: \t%db total,\t %db free,\t %db used (%d%%)\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), configTOTAL_HEAP_SIZE, heapRemaining, configTOTAL_HEAP_SIZE - heapRemaining, ((configTOTAL_HEAP_SIZE - heapRemaining) * 100) / configTOTAL_HEAP_SIZE);
+            
+            ttprintf("%ssorting: %s (options: p(id), n(ame), l(load), t(ime), s(tack), h(eap)) \r\n\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), top_sortingNamesPointers[currSortingMode]);
+            
+            //new CPU load test
+            ttprintf("%s%s%s", TERM_getVT100Code(_VT100_BACKGROUND_COLOR, _VT100_WHITE), TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLACK));
+            ttprintf("PID \r\x1b[%dCName \r\x1b[%dCstate \r\x1b[%dC%%Cpu \r\x1b[%dCavg %%CPU  \r\x1b[%dCtime  \r\x1b[%dCStack \r\x1b[%dCHeap\r\n", 6
+                    , 7 + configMAX_TASK_NAME_LEN
+                    , 20 + configMAX_TASK_NAME_LEN
+                    , 27 + configMAX_TASK_NAME_LEN
+                    , 37 + configMAX_TASK_NAME_LEN
+                    , 47 + configMAX_TASK_NAME_LEN
+                    , 55 + configMAX_TASK_NAME_LEN);
+            
+            ttprintf("%s", TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
+            
+            uint32_t totalLoad = 0;
+            
+            TaskStatus_t ** sorted = createSortedList(taskStats, taskCount, currSortingMode);
+            for(uint32_t currTask = 0; currTask < taskCount; currTask++){
+                //make sure name is zero terminated
+                char name[configMAX_TASK_NAME_LEN+1];
+                strncpy(name, sorted[currTask]->pcTaskName, configMAX_TASK_NAME_LEN);
+                
+                ttprintf("%s%d\r\x1b[%dC%s\r\x1b[%dC%s\r\x1b[%dC%d,%d\r\x1b[%dC%d,%d\r\x1b[%dC%u\r\x1b[%dC%d\r\x1b[%dC%d\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0)
+                                                      , sorted[currTask]->xTaskNumber
+                        , 6                           , name
+                        , 7 + configMAX_TASK_NAME_LEN , SYS_getTaskStateString(sorted[currTask]->eCurrentState)
+                        , 20 + configMAX_TASK_NAME_LEN, sorted[currTask]->currCPULoad / 10, sorted[currTask]->currCPULoad % 10
+                        , 27 + configMAX_TASK_NAME_LEN, sorted[currTask]->avgCPULoad / 10, sorted[currTask]->avgCPULoad % 10
+                        , 37 + configMAX_TASK_NAME_LEN, sorted[currTask]->ulRunTimeCounter
+                        , 47 + configMAX_TASK_NAME_LEN, sorted[currTask]->usStackHighWaterMark
+                        , 55 + configMAX_TASK_NAME_LEN, sorted[currTask]->usedHeap);
+                
+                totalLoad += sorted[currTask]->currCPULoad;
+            }
+            
+            uint32_t isrLoad = 1000-totalLoad;
+            ttprintf("\n%s\r\x1b[%dC%s\r\x1b[%dC%s\r\x1b[%dC%d,%d\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0)
+                        , 6                           , "Interrupts"
+                        , 7 + configMAX_TASK_NAME_LEN , "none"
+                        , 20 + configMAX_TASK_NAME_LEN, isrLoad / 10, isrLoad % 10);
+            
+            vPortFree(sorted);
+            vPortFree(taskStats);
+        }else{
+            ttprintf("Malloc failed\r\n");
+        }
+        
+        //wait 400ms and try to get a char while doing so
+        for(uint32_t i = 0; i < 400; i++){
+            c = ttgetc(pdMS_TO_TICKS(1));
+            if(c != 0) break;
+        }
+        
+        switch(c){
+            case 'p':
+            case 'P':
+                currSortingMode = TOP_SORT_PID;
+                break;
+
+            case 'n':
+            case 'N':
+                currSortingMode = TOP_SORT_NAME;
+                break;
+
+            case 'l':
+            case 'L':
+                currSortingMode = TOP_SORT_LOAD;
+                break;
+
+            case 'r':
+            case 'R':
+            case 't':
+            case 'T':
+                currSortingMode = TOP_SORT_RUNTIME;
+                break;
+
+            case 's':
+            case 'S':
+                currSortingMode = TOP_SORT_STACK;
+                break;
+
+            case 'h':
+            case 'H':
+                currSortingMode = TOP_SORT_HEAP;
+                break;
+                
+            case 0:
+                break;
+
+            default:
+                currSortingMode = TOP_SORT_NONE;
+                break;
+        }
+        
+    }while(c!=CTRL_C);
+    
     return returnCode;
 }
 
@@ -146,130 +244,4 @@ static TaskStatus_t ** createSortedList(TaskStatus_t * pxTaskStatusArray, uint32
         sortedList[newPos] = &pxTaskStatusArray[currTask];
     }
     return sortedList;
-}
-
-void TASK_main(void *pvParameters){
-    TERMINAL_HANDLE * handle = (TERMINAL_HANDLE*)pvParameters;
-    uint32_t currSortingMode = 0;
-    char c=0;
-    do{
-        
-        TaskStatus_t * taskStats;
-        uint32_t taskCount = uxTaskGetNumberOfTasks();
-        uint32_t sysTime;
-                
-        taskStats = pvPortMalloc( taskCount * sizeof( TaskStatus_t ) );
-        if(taskStats){
-            taskCount = uxTaskGetSystemState(taskStats, taskCount, &sysTime);
-            
-            TERM_sendVT100Code(handle, _VT100_CURSOR_POS1, 0);
-        
-            uint32_t cpuLoad = SYS_getCPULoadFine(taskStats, taskCount, sysTime);
-            ttprintf("%sbottom - %d\r\n%sTasks: \t%d\r\n%sCPU: \t%d,%d%%\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), xTaskGetTickCount(), TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), taskCount, TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), cpuLoad / 10, cpuLoad % 10);
-            
-            uint32_t heapRemaining = xPortGetFreeHeapSize();
-            ttprintf("%sMem: \t%db total,\t %db free,\t %db used (%d%%)\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), configTOTAL_HEAP_SIZE, heapRemaining, configTOTAL_HEAP_SIZE - heapRemaining, ((configTOTAL_HEAP_SIZE - heapRemaining) * 100) / configTOTAL_HEAP_SIZE);
-            
-            ttprintf("%ssorting: %s (options: p(id), n(ame), l(load), t(ime), s(tack), h(eap)) \r\n\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), top_sortingNamesPointers[currSortingMode]);
-            
-            //new CPU load test
-            ttprintf("%s%s%s", TERM_getVT100Code(_VT100_BACKGROUND_COLOR, _VT100_WHITE), TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLACK));
-            ttprintf("PID \r\x1b[%dCName \r\x1b[%dCstate \r\x1b[%dC%%Cpu \r\x1b[%dCavg %%CPU  \r\x1b[%dCtime  \r\x1b[%dCStack \r\x1b[%dCHeap\r\n", 6
-                    , 7 + configMAX_TASK_NAME_LEN
-                    , 20 + configMAX_TASK_NAME_LEN
-                    , 27 + configMAX_TASK_NAME_LEN
-                    , 37 + configMAX_TASK_NAME_LEN
-                    , 47 + configMAX_TASK_NAME_LEN
-                    , 55 + configMAX_TASK_NAME_LEN);
-            
-            ttprintf("%s", TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
-            
-            uint32_t totalLoad = 0;
-            
-            TaskStatus_t ** sorted = createSortedList(taskStats, taskCount, currSortingMode);
-            for(uint32_t currTask = 0; currTask < taskCount; currTask++){
-                //make sure name is zero terminated
-                char name[configMAX_TASK_NAME_LEN+1];
-                strncpy(name, sorted[currTask]->pcTaskName, configMAX_TASK_NAME_LEN);
-                
-                ttprintf("%s%d\r\x1b[%dC%s\r\x1b[%dC%s\r\x1b[%dC%d,%d\r\x1b[%dC%d,%d\r\x1b[%dC%u\r\x1b[%dC%d\r\x1b[%dC%d\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0)
-                                                      , sorted[currTask]->xTaskNumber
-                        , 6                           , name
-                        , 7 + configMAX_TASK_NAME_LEN , SYS_getTaskStateString(sorted[currTask]->eCurrentState)
-                        , 20 + configMAX_TASK_NAME_LEN, sorted[currTask]->currCPULoad / 10, sorted[currTask]->currCPULoad % 10
-                        , 27 + configMAX_TASK_NAME_LEN, sorted[currTask]->avgCPULoad / 10, sorted[currTask]->avgCPULoad % 10
-                        , 37 + configMAX_TASK_NAME_LEN, sorted[currTask]->ulRunTimeCounter
-                        , 47 + configMAX_TASK_NAME_LEN, sorted[currTask]->usStackHighWaterMark
-                        , 55 + configMAX_TASK_NAME_LEN, sorted[currTask]->usedHeap);
-                
-                totalLoad += sorted[currTask]->currCPULoad;
-            }
-            
-            uint32_t isrLoad = 1000-totalLoad;
-            ttprintf("\n%s\r\x1b[%dC%s\r\x1b[%dC%s\r\x1b[%dC%d,%d\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0)
-                        , 6                           , "Interrupts"
-                        , 7 + configMAX_TASK_NAME_LEN , "none"
-                        , 20 + configMAX_TASK_NAME_LEN, isrLoad / 10, isrLoad % 10);
-            
-            vPortFree(sorted);
-            vPortFree(taskStats);
-        }else{
-            ttprintf("Malloc failed\r\n");
-        }
-        
-        if(xStreamBufferReceive(handle->currProgram->inputStream,&c,sizeof(c),1000) == 1){
-            switch(c){
-                case 'p':
-                case 'P':
-                    currSortingMode = TOP_SORT_PID;
-                    break;
-                    
-                case 'n':
-                case 'N':
-                    currSortingMode = TOP_SORT_NAME;
-                    break;
-                    
-                case 'l':
-                case 'L':
-                    currSortingMode = TOP_SORT_LOAD;
-                    break;
-                    
-                case 'r':
-                case 'R':
-                case 't':
-                case 'T':
-                    currSortingMode = TOP_SORT_RUNTIME;
-                    break;
-                    
-                case 's':
-                case 'S':
-                    currSortingMode = TOP_SORT_STACK;
-                    break;
-                    
-                case 'h':
-                case 'H':
-                    currSortingMode = TOP_SORT_HEAP;
-                    break;
-                    
-                default:
-                    currSortingMode = TOP_SORT_NONE;
-                    break;
-            }
-        }
-        
-    }while(c!=CTRL_C);
-    TERM_killProgramm(handle);
-}
-
-uint8_t INPUT_handler(TERMINAL_HANDLE * handle, uint16_t c){
-    if(handle->currProgram->inputStream==NULL) return TERM_CMD_EXIT_SUCCESS;
-    xStreamBufferSend(handle->currProgram->inputStream,&c,1,20);
-    switch(c){
-        case 'q':
-        case CTRL_C:
-            c=CTRL_C;
-            return TERM_CMD_EXIT_SUCCESS;
-        default:
-            return TERM_CMD_PROC_RUNNING;
-    }
 }

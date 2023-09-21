@@ -62,7 +62,7 @@
 #if TERM_SUPPORT_CWD == 1
     #define TERM_DEVICE_NAME handle->cwdPath
 #else
-    #define TERM_DEVICE_NAME "UD3"
+    #define TERM_DEVICE_NAME "CM"
 #endif
 
 #ifdef TERM_ENABLE_STARTUP_TEXT
@@ -85,6 +85,7 @@ const extern char TERM_startupText3[];
 #endif
 
 #define ttgetline() TERM_getLine(handle, portMAX_DELAY)
+#define ttgetc(X) TERM_getChar(handle, X)
 
 //entity holding data of an open terminal
 typedef struct __TERMINAL_HANDLE__ TERMINAL_HANDLE;

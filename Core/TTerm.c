@@ -713,6 +713,13 @@ uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             }
             break;
             
+        case 0:
+            break;
+            
+        case 0x13:
+            TERM_printDebug(handle, "Stop your ctrl-s autism please, nothing to save here\r\n", c);
+            break;
+            
         default:
             TERM_printDebug(handle, "unknown code received: 0x%02x\r\n", c);
             break;
@@ -837,16 +844,31 @@ static void TERM_cmdTask(void * pvData){
     
     TERM_programEnterForeground(prog);
     
+    //start with direct input mode
+    TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
+    
     //run command
     if(prog->cmd->function != 0){
         retCode = (*prog->cmd->function)(prog->handle, prog->argCount, prog->args);
     }
-    
+              
     TERM_programReturn(prog, retCode);
     
     //remove task
     vTaskDelete(NULL);
     while(1);
+}
+
+char TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
+    //get prog pointer
+    TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
+    char c = 0;
+    
+    //try to receive a character from the buffer, if we get nothing c will remain NULL
+    xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout);
+    
+    //return what we got, or NULL if we didn't get anything
+    return c;
 }
 
 char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
