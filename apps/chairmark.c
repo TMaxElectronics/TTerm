@@ -23,17 +23,11 @@
 
 #include <stdlib.h>
 
-#include "top.h"
 #include "string.h"
-#include "SPI.h"
 #ifdef TERM_SUPPORT_CWD 
 #include "ff.h"
 #endif
 #include "TTerm_AC.h"
-
-#if __has_include("myinclude.h") && __has_include(<stdint.h>)
-# include "myinclude.h"
-#endif
 
 #define APP_NAME "chairMark"
 #define APP_DESCRIPTION "almost a benchmark"

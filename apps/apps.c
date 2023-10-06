@@ -21,10 +21,16 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 #include "apps.h"
-#include "chairmark.h"
+
+#if __has_include("FreeRTOS.h")
+#include "top.h"
+#endif
 
 uint8_t REGISTER_apps(TermCommandDescriptor * desc){
     
+//register top if freeRTOS is available
+#if __has_include("FreeRTOS.h")
     REGISTER_top(desc);
-    REGISTER_chairMark(desc);
+#endif
+    return TERM_CMD_EXIT_SUCCESS;
 }

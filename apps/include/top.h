@@ -24,6 +24,10 @@
 #if !defined(app_top_H)
 #define app_top_H
 
+#if !__has_include("FreeRTOS.h")
+#error Using app "Top" Requires FreeRTOS!
+#endif
+
 #include "TTerm.h"
 
 uint8_t REGISTER_top(TermCommandDescriptor * desc);

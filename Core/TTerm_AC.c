@@ -29,9 +29,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "FreeRTOS.h"
-#include "task.h"
-#include "UART.h"
 #include "TTerm.h"
 #include "TTerm_cmd.h"
 #include "TTerm_AC.h"
@@ -59,7 +56,7 @@ uint8_t TERM_doAutoComplete(TERMINAL_HANDLE * handle){
         handle->autocompleteBufferLength = 0;
         return 0;
     }else{
-        handle->autocompleteBuffer = pvPortMalloc(handle->cmdListHead->commandLength * sizeof(char *));
+        handle->autocompleteBuffer = TERM_MALLOC(handle->cmdListHead->commandLength * sizeof(char *));
         handle->currAutocompleteCount = 0;
         handle->autocompleteBufferLength = TERM_findMatchingCMDs(handle->inputBuffer, handle->currBufferLength, handle->autocompleteBuffer, handle->cmdListHead);
         handle->autocompleteStart = 0;
@@ -171,17 +168,17 @@ uint8_t ACL_defaultCompleter(TERMINAL_HANDLE * handle, void * params){
     
     AC_LIST_HEAD * list = (AC_LIST_HEAD *) params;
     
-    char * buff = pvPortMalloc(128);
+    char * buff = TERM_MALLOC(128);
     uint8_t len;
     memset(buff, 0, 128);
     handle->autocompleteStart = TERM_findLastArg(handle, buff, &len);
     
     //TODO use a reasonable size here
-    handle->autocompleteBuffer = pvPortMalloc(list->elementCount * sizeof(char *));
+    handle->autocompleteBuffer = TERM_MALLOC(list->elementCount * sizeof(char *));
     handle->currAutocompleteCount = 0;
     handle->autocompleteBufferLength = TERM_doListAC(list, buff, len, handle->autocompleteBuffer);
         
-    vPortFree(buff);
+    TERM_FREE(buff);
     return handle->autocompleteBufferLength;
 }
 
@@ -190,7 +187,7 @@ AC_LIST_ELEMENT * ACL_getNext(AC_LIST_ELEMENT * currElement){
 }
 
 AC_LIST_HEAD * ACL_create(){
-    AC_LIST_HEAD * ret = pvPortMalloc(sizeof(AC_LIST_HEAD));
+    AC_LIST_HEAD * ret = TERM_MALLOC(sizeof(AC_LIST_HEAD));
     ret->elementCount = 0;
     ret->first = 0;
     ret->isConst = 0;
@@ -198,7 +195,7 @@ AC_LIST_HEAD * ACL_create(){
 }
 
 AC_LIST_HEAD * ACL_createConst(char ** strings, uint32_t count){
-    AC_LIST_HEAD * ret = pvPortMalloc(sizeof(AC_LIST_HEAD));
+    AC_LIST_HEAD * ret = TERM_MALLOC(sizeof(AC_LIST_HEAD));
     
     if(count == 0){  //autocount (requires "__LIST_END__" string)
         uint32_t currCount = 0;
@@ -232,7 +229,7 @@ void ACL_add(AC_LIST_HEAD * head, char * string){
     if(head->isConst || ACL_find(head, string) != 0) return;
     
     if(head->elementCount == 0){
-        AC_LIST_ELEMENT * newElement = pvPortMalloc(sizeof(AC_LIST_ELEMENT));
+        AC_LIST_ELEMENT * newElement = TERM_MALLOC(sizeof(AC_LIST_ELEMENT));
         newElement->string = string;
         newElement->next = 0;
         head->first = newElement;
@@ -246,7 +243,7 @@ void ACL_add(AC_LIST_HEAD * head, char * string){
     
     while(currPos < head->elementCount){
         if(ACL_isSorted(currComp->string, string)){
-            AC_LIST_ELEMENT * newElement = pvPortMalloc(sizeof(AC_LIST_ELEMENT));
+            AC_LIST_ELEMENT * newElement = TERM_MALLOC(sizeof(AC_LIST_ELEMENT));
             newElement->string = string;
 
             *lastComp = newElement;
@@ -257,7 +254,7 @@ void ACL_add(AC_LIST_HEAD * head, char * string){
             break;
         }
         if(currComp->next == 0){
-            AC_LIST_ELEMENT * newElement = pvPortMalloc(sizeof(AC_LIST_ELEMENT));
+            AC_LIST_ELEMENT * newElement = TERM_MALLOC(sizeof(AC_LIST_ELEMENT));
             newElement->string = string;
             newElement->string = string;
             newElement->next = currComp->next;
@@ -282,12 +279,12 @@ void ACL_remove(AC_LIST_HEAD * head, char * string){
         if((strlen(currComp->string) == strlen(string)) && (strcmp(currComp->string, string) == 0)){
             *lastComp = currComp->next;
             
-            //TODO make this portable
-            if(ptr_is_in_ram(currComp->string)){
-                vPortFree(currComp->string);
-            }
+            //TODO reimplement this. currently this leaks memory
+            /*if(ptr_is_in_ram(currComp->string)){
+                TERM_FREE(currComp->string);
+            }*/
             
-            vPortFree(currComp);
+            TERM_FREE(currComp);
             head->elementCount --;
             return;
         }

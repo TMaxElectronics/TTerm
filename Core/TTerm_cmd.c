@@ -28,12 +28,11 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include "FreeRTOS.h"
-#include "task.h"
+
 #include "TTerm.h"
+#include "TTerm_config.h".h"
 #include "TTerm_cmd.h"
-#include "semphr.h"
-#include "stream_buffer.h"
+
 //#include "system.h"
 //#include "UART.h"
 
@@ -68,7 +67,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
             }
         }else if(strcmp(args[currArg], "-aa") == 0){
             if(++currArg < argCount){
-                char * newString = pvPortMalloc(strlen(args[currArg])+1);
+                char * newString = TERM_MALLOC(strlen(args[currArg])+1);
                 strcpy(newString, args[currArg]);
                 ACL_add(head, newString);
                 ttprintf("Added \"%s\" to the ACL\r\n", args[currArg]);
@@ -77,13 +76,14 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("missing ACL element value for option \"-aa\"\r\n");
                 returnCode = TERM_CMD_EXIT_ERROR;
             }
+#ifdef TERM_startTaskPerCommand
         }else if(strcmp(args[currArg], "-i") == 0){
             ttprintf("testing reading of input:\r\n");
             ttprintf("please enter your name:"); 
             char * name = ttgetline();
             ttprintf(" ok!\r\n");
             ttprintf("Hello %s :)\r\n", name);
-            vPortFree(name);
+            TERM_FREE(name);
             returnCode = TERM_CMD_EXIT_SUCCESS;
         }else if(strcmp(args[currArg], "-iI") == 0){
             uint32_t chip = 0;
@@ -92,7 +92,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 char * id = ttgetline();
                 ttprintf("\r\n");
                 chip = atoi(id);
-                vPortFree(id);
+                TERM_FREE(id);
                 if(chip == 6581 || chip == 8580 || chip == 42){
                     break;
                 }else{
@@ -107,6 +107,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
             }
             
             returnCode = TERM_CMD_EXIT_SUCCESS;
+#endif
         }
     }
     if(returnCode != 0) return returnCode;
@@ -131,26 +132,28 @@ uint8_t TERM_testCommandAutoCompleter(TERMINAL_HANDLE * handle, void * params){
         return 0;
     }
     
-    char * buff = pvPortMalloc(128);
+    char * buff = TERM_MALLOC(128);
     uint8_t len;
     memset(buff, 0, 128);
     handle->autocompleteStart = TERM_findLastArg(handle, buff, &len);
     
     //TODO use a reasonable size here
-    handle->autocompleteBuffer = pvPortMalloc(list->elementCount * sizeof(char *));
+    handle->autocompleteBuffer = TERM_MALLOC(list->elementCount * sizeof(char *));
     handle->currAutocompleteCount = 0;
     handle->autocompleteBufferLength = TERM_doListAC(list, buff, len, handle->autocompleteBuffer);
 
     //UART_print("\r\ncompleting \"%s\" (len = %d, matching = %d) will delete until %d\r\n", buff, len, handle->autocompleteBufferLength, handle->autocompleteStart);
         
-    vPortFree(buff);
+    TERM_FREE(buff);
     return handle->autocompleteBufferLength;
 }
 
+#ifdef TERM_RESET_FUNCTION
 uint8_t CMD_reset(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
-    __pic32_software_reset();
+    TERM_RESET_FUNCTION();
     return TERM_CMD_EXIT_SUCCESS;
 }
+#endif
 
 uint8_t CMD_help(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
     uint8_t currArg = 0;

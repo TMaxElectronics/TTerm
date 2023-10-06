@@ -26,10 +26,6 @@
 
 #include "TTerm.h"
 
-#include "top.h"
-//#include "tte.h"
-
-
 uint8_t REGISTER_apps(TermCommandDescriptor * desc);
 
 #endif

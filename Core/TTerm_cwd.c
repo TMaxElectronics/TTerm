@@ -36,7 +36,7 @@ uint8_t CMD_cat(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
     
     if(argCount==0) return TERM_CMD_EXIT_SUCCESS;
     
-    uint8_t* buffer = pvPortMalloc(BUFFER_SIZE);
+    uint8_t* buffer = TERM_MALLOC(BUFFER_SIZE);
 
     if(buffer==NULL) {
         ttprintf("Cannot allocate memory\r\n");

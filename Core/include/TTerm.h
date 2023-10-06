@@ -24,198 +24,236 @@
 #ifndef TTerm_H
 #define TTerm_H
 
+#define TERM_VERSION_STRING "V1.0"
+
+#include <stdint.h>
+
+//include freeRTOS if available
+#if __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
 #include "stream_buffer.h"
+#endif
 
 #include "TTerm_VT100.h"
 #include "TTerm_config.h"
 
-
-#define EXTENDED_PRINTF 1
-#define TERM_VERSION_STRING "V0.9"
-#define TERM_PROG_BUFFER_SIZE 32
-
-#define CTRL_C 0x03
-
-#if PIC32 == 1 
-    #define START_OF_FLASH  0xa0000000
-    #define END_OF_FLASH    0xa000ffff
-#else
-    #define START_OF_FLASH  0x00000000
-    #define END_OF_FLASH    0x1FFF8000
+#ifdef TERM_ENABLE_CWD
+#include "TTerm_cwd.h"
 #endif
 
-#define TERM_HISTORYSIZE 16
-#define TERM_INPUTBUFFER_SIZE 128
+//Return Code Defines
+#define CTRL_C 							0x03
 
-                       
-#define TERM_ARGS_ERROR_STRING_LITERAL 0xffff
+#define TERM_ARGS_ERROR_STRING_LITERAL 	0xffff
 
-#define TERM_CMD_EXIT_ERROR 0
-#define TERM_CMD_EXIT_NOT_FOUND 1
-#define TERM_CMD_EXIT_SUCCESS 0xff
-#define TERM_CMD_EXIT_PROC_STARTED 0xfe
-#define TERM_CMD_PROC_RUNNING 0x80
+#define TERM_CMD_EXIT_ERROR 			0
+#define TERM_CMD_EXIT_NOT_FOUND 		1
+#define TERM_CMD_EXIT_SUCCESS 			0xff
+#define TERM_CMD_EXIT_PROC_STARTED 		0xfe
+#define TERM_CMD_PROC_RUNNING 			0x80
 
+#if __has_include("FreeRTOS.h")
+	#define TERM_DEFAULT_STACKSIZE 		configMINIMAL_STACK_SIZE + 100
+#else
+	#define TERM_DEFAULT_STACKSIZE 		0
+#endif
+
+//Terminal struct defines
+typedef struct __TERMINAL_HANDLE__ TERMINAL_HANDLE;
+typedef struct __TermCommandDescriptor__ TermCommandDescriptor;
+
+
+//Function prototypes
+typedef uint8_t (* TermCommandFunction)		(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args);
+typedef uint8_t (* TermCommandInputHandler)	(TERMINAL_HANDLE * handle, uint16_t c);		//TODO maybe remove this? shouldn't be required anymore
+typedef uint8_t (* TermErrorPrinter)		(TERMINAL_HANDLE * handle, uint32_t retCode);
+typedef uint8_t (* TermAutoCompHandler)		(TERMINAL_HANDLE * handle, void * params);
+
+
+extern TermCommandDescriptor TERM_defaultList;
+
+//CWD Defines
 #if TERM_SUPPORT_CWD == 1
     #define TERM_DEVICE_NAME handle->cwdPath
 #else
-    #define TERM_DEVICE_NAME "CM"
+    #define TERM_DEVICE_NAME TERM_NAME
 #endif
 
-#ifdef TERM_ENABLE_STARTUP_TEXT
-const extern char TERM_startupText1[];
-const extern char TERM_startupText2[];
-const extern char TERM_startupText3[];
-#endif
-
-
+//defines for optional Handle extension on printf
 #if EXTENDED_PRINTF == 1
-#define ttprintfEcho(format, ...) if(handle->currEchoEnabled) (*handle->print)(handle->port, format, ##__VA_ARGS__)
+	#define ttprintfEcho(format, ...) if(handle->currEchoEnabled) (*handle->print)(handle->port, format, ##__VA_ARGS__)
+	#define ttprintf(format, ...) (*handle->print)(handle->port, format, ##__VA_ARGS__)
+	typedef uint32_t (* TermPrintHandler)(void * port, char * format, ...);
+
 #else
-#define ttprintfEcho(format, ...) if(echoEnabled) (*handle->print)(format, ##__VA_ARGS__)
+	#define ttprintfEcho(format, ...) if(echoEnabled) (*handle->print)(format, ##__VA_ARGS__)
+	#define ttprintf(format, ...) (*handle->print)(format, ##__VA_ARGS__)
+	typedef void (* TermPrintHandler)(char * format, ...);
+
 #endif
 
-#if EXTENDED_PRINTF == 1
-#define ttprintf(format, ...) (*handle->print)(handle->port, format, ##__VA_ARGS__)
-#else
-#define ttprintf(format, ...) (*handle->print)(format, ##__VA_ARGS__)
+
+
+//Defines for startTaskPerCommand. Make sure freeRTOS is available before actually including this
+#if defined TERM_startTaskPerCommand
+	#if __has_include("FreeRTOS.h")
+
+		//function abbreviations
+		#define ttgetline() TERM_getLine(handle, portMAX_DELAY)
+		#define ttgetc(X) TERM_getChar(handle, X)
+
+		//enums
+		typedef enum {PROG_RETURN, PROG_SETINPUTMODE, PROG_ENTERFOREGROUND, PROG_EXITFOREGROUND, PROG_KILL} ProgCMDType_t;
+		typedef enum {INPUTMODE_NONE, INPUTMODE_DIRECT, INPUTMODE_GET_LINE} InputMode_t;
+
+		//structs
+		typedef struct{
+			TaskHandle_t 			task;
+			TermCommandInputHandler inputHandler;
+			StreamBufferHandle_t 	inputStream;
+			QueueHandle_t 			cmdStream;
+
+			TermCommandDescriptor 	* cmd;
+			TERMINAL_HANDLE 	  	* handle;
+			char 				  	* commandString;
+			char 				  	** args;
+			uint8_t argCount;
+		} TermProgram;
+
+		typedef struct{
+			ProgCMDType_t   		cmd;
+			uint32_t        		arg;
+			TermProgram 		  	* src;
+			void 				  	* data;
+		} Term_progCMD_t;
+	#else
+		//TERM_startTaskPerCommand is set but freeRTOS is not available, throw an error so the user knows whats happening
+		#error TERM_startTaskPerCommand requires FreeRTOS, but couldnt find it!
+	#endif
 #endif
-
-#define ttgetline() TERM_getLine(handle, portMAX_DELAY)
-#define ttgetc(X) TERM_getChar(handle, X)
-
-//entity holding data of an open terminal
-typedef struct __TERMINAL_HANDLE__ TERMINAL_HANDLE;
-
-
-typedef struct __TermCommandDescriptor__ TermCommandDescriptor;
-
-typedef uint8_t (* TermCommandFunction)(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args);
-typedef uint8_t (* TermCommandInputHandler)(TERMINAL_HANDLE * handle, uint16_t c);
-typedef uint8_t (* TermErrorPrinter)(TERMINAL_HANDLE * handle, uint32_t retCode);
-
-#if EXTENDED_PRINTF == 1
-typedef uint32_t (* TermPrintHandler)(void * port, char * format, ...);
-#else
-typedef void (* TermPrintHandler)(char * format, ...);
-#endif
-typedef uint8_t (* TermAutoCompHandler)(TERMINAL_HANDLE * handle, void * params);
-
-typedef struct{
-    TaskHandle_t task;
-    TermCommandInputHandler inputHandler;
-    StreamBufferHandle_t inputStream;
-    QueueHandle_t cmdStream;
-    
-    TermCommandDescriptor * cmd;
-    TERMINAL_HANDLE * handle;
-    char * commandString;
-    char ** args;
-    uint8_t argCount;
-} TermProgram;
-
-typedef enum {PROG_RETURN, PROG_SETINPUTMODE, PROG_ENTERFOREGROUND, PROG_EXITFOREGROUND, PROG_KILL} ProgCMDType_t;
-typedef struct{
-    ProgCMDType_t   cmd;
-    uint32_t        arg;
-    TermProgram *   src;
-    void *          data;
-} Term_progCMD_t;
 
 struct __TermCommandDescriptor__{
-    TermCommandFunction function;
-    const char * command;
-    const char * commandDescription;
-    uint32_t commandLength;
-    uint32_t stackSize;
-    TermAutoCompHandler ACHandler;
-    void * ACParams;
-    
-    TermCommandDescriptor * nextCmd;
+	TermCommandFunction function;
+	const char 			  * command;
+	const char 			  * commandDescription;
+	uint32_t 				commandLength;
+	uint32_t 				stackSize;
+	TermAutoCompHandler 	ACHandler;
+	void 			 	  * ACParams;
+
+	TermCommandDescriptor * nextCmd;
 };
 
-typedef enum {INPUTMODE_NONE, INPUTMODE_DIRECT, INPUTMODE_GET_LINE} InputMode_t;
-
 struct __TERMINAL_HANDLE__{
-    char * inputBuffer;
-    #if EXTENDED_PRINTF == 1
-    void * port;
-    #endif        
-    uint32_t currBufferPosition;
-    uint32_t currBufferLength;
-    uint32_t currAutocompleteCount;
+
+	//autocomplete stuff
+    uint32_t 		currAutocompleteCount;
+    char 		** 	autocompleteBuffer;
+    uint32_t 		autocompleteBufferLength;
+    uint32_t 		autocompleteStart;
+
+    //buffers
+    char 		* 	inputBuffer;
+    char 		* 	historyBuffer[TERM_HISTORYSIZE];
+    uint8_t 		escSeqBuff[16];
+
+    //position pointers
+    uint32_t 		currBufferPosition;
+    uint32_t 		currBufferLength;
+    uint32_t 		currHistoryWritePosition;
+    uint32_t 		currHistoryReadPosition;
+    uint8_t 		currEscSeqPos;
+
+    //enable flags
+    unsigned 		echoEnabled;
+    unsigned 		currEchoEnabled;
+
+    //constants
+    char 		* 	currUserName;
+    TermCommandDescriptor * cmdListHead;
+    TermPrintHandler print;
+    TermErrorPrinter errorPrinter;
+
+#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
     TermProgram * nextProgram;
     TermProgram * currProgram;
+
     InputMode_t * currProgramInputMode;
-    char ** autocompleteBuffer;
-    uint32_t autocompleteBufferLength;
-    uint32_t autocompleteStart;    
-    TermPrintHandler print;
-    char * currUserName;
-    char * historyBuffer[TERM_HISTORYSIZE];
-    uint32_t currHistoryWritePosition;
-    uint32_t currHistoryReadPosition;
-    uint8_t currEscSeqPos;
-    uint8_t escSeqBuff[16];
-    unsigned echoEnabled;
-    unsigned currEchoEnabled;
-    TermCommandDescriptor * cmdListHead;
-    TermErrorPrinter errorPrinter;
-    
+
     QueueHandle_t cmdStream;
+#endif
+    
+#if EXTENDED_PRINTF == 1
+    void * port;
+#endif
     
 #if TERM_SUPPORT_CWD == 1
-    //DIR cwd;
     char * cwdPath;
 #endif
 };
 
-typedef enum{
-    TERM_CHECK_COMP_AND_HIST = 0b11, TERM_CHECK_COMP = 0b01, TERM_CHECK_HIST = 0b10, 
-} COPYCHECK_MODE;
+typedef enum{TERM_CHECK_COMP_AND_HIST = 0b11, TERM_CHECK_COMP = 0b01, TERM_CHECK_HIST = 0b10} COPYCHECK_MODE;
 
-extern TermCommandDescriptor TERM_defaultList; 
 
+//(De-) initializers
 #if EXTENDED_PRINTF == 1
 TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, void * port, unsigned echoEnabled, TermCommandDescriptor * cmdListHead, TermErrorPrinter errorPrinter, const char * usr);
 #else
 TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned echoEnabled, TermCommandDescriptor * cmdListHead, TermErrorPrinter errorPrinter, const char * usr);    
 #endif    
-void TERM_destroyHandle(TERMINAL_HANDLE * handle);
-uint8_t TERM_processBuffer(uint8_t * data, uint16_t length, TERMINAL_HANDLE * handle);
-unsigned isACIILetter(char c);
-uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle);
-char * strnchr(char * str, char c, uint32_t length);
-void strsft(char * src, int32_t startByte, int32_t offset);
-void TERM_printBootMessage(TERMINAL_HANDLE * handle);
-void TERM_freeCommandList(TermCommandDescriptor ** cl, uint16_t length);
-uint8_t TERM_buildCMDList();
-TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint32_t stackSize, TermCommandDescriptor * head);
-void TERM_addCommandAC(TermCommandDescriptor * cmd, TermAutoCompHandler ACH, void * ACParams);
-unsigned TERM_isSorted(TermCommandDescriptor * a, TermCommandDescriptor * b);
-char toLowerCase(char c);
-void TERM_setCursorPos(TERMINAL_HANDLE * handle, uint16_t x, uint16_t y);
-void TERM_sendVT100Code(TERMINAL_HANDLE * handle, uint16_t cmd, uint8_t var);
-const char * TERM_getVT100Code(uint16_t cmd, uint8_t var);
-uint16_t TERM_countArgs(const char * data, uint16_t dataLength);
-uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * handle);
-uint8_t TERM_seperateArgs(char * data, uint16_t dataLength, char ** buff);
-void TERM_checkForCopy(TERMINAL_HANDLE * handle, COPYCHECK_MODE mode);
-void TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...);
-void TERM_removeProgramm(TERMINAL_HANDLE * handle);
-void TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog);
-void TERM_killProgramm(TERMINAL_HANDLE * handle);
-uint8_t TERM_doAutoComplete(TERMINAL_HANDLE * handle);
-uint8_t TERM_findMatchingCMDs(char * currInput, uint8_t length, char ** buff, TermCommandDescriptor * cmdListHead);
-TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle);
-uint8_t TERM_findLastArg(TERMINAL_HANDLE * handle, char * buff, uint8_t * lenBuff);
-BaseType_t ptr_is_in_ram(void* ptr);
-uint8_t TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode);
-void TERM_LIST_add(TermCommandDescriptor * item, TermCommandDescriptor * head);
 
-#include "TTerm_cwd.h"
+void TERM_destroyHandle(TERMINAL_HANDLE * handle);
+
+//String utilities
+unsigned 		isACIILetter(char c);
+char 			toLowerCase(char c);
+void 			strsft(char * src, int32_t startByte, int32_t offset);
+char 		* 	strnchr(char * str, char c, uint32_t length);
+
+//other utilities
+void 			TERM_setCursorPos(TERMINAL_HANDLE * handle, uint16_t x, uint16_t y);
+
+//VT100 Support TODO improve this?
+void 			TERM_sendVT100Code(TERMINAL_HANDLE * handle, uint16_t cmd, uint8_t var);
+const char 	* 	TERM_getVT100Code(uint16_t cmd, uint8_t var);
+
+//Input processing
+uint8_t 		TERM_processBuffer(uint8_t * data, uint16_t length, TERMINAL_HANDLE * handle);
+void 			TERM_checkForCopy(TERMINAL_HANDLE * handle, COPYCHECK_MODE mode);
+
+//Command list functions
+TermCommandDescriptor * TERM_addCommand(TermCommandFunction function, const char * command, const char * description, uint32_t stackSize, TermCommandDescriptor * head);
+void 			TERM_LIST_add(TermCommandDescriptor * item, TermCommandDescriptor * head); //TODO refactor this to align with naming convention
+void 			TERM_addCommandAC(TermCommandDescriptor * cmd, TermAutoCompHandler ACH, void * ACParams);
+unsigned 		TERM_isSorted(TermCommandDescriptor * a, TermCommandDescriptor * b);
+void 			TERM_freeCommandList(TermCommandDescriptor ** cl, uint16_t length);
+uint8_t 		TERM_buildCMDList();
+
+//command interpreter
+uint16_t 		TERM_countArgs(const char * data, uint16_t dataLength);
+TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle);
+uint8_t 		TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * handle);
+uint8_t 		TERM_seperateArgs(char * data, uint16_t dataLength, char ** buff);
+uint8_t 		TERM_findLastArg(TERMINAL_HANDLE * handle, char * buff, uint8_t * lenBuff);
+
+//autocomplete handlers
+uint8_t TERM_findMatchingCMDs(char * currInput, uint8_t length, char ** buff, TermCommandDescriptor * cmdListHead);
+uint8_t TERM_doAutoComplete(TERMINAL_HANDLE * handle);
+
+
+//default printer functions
+void 			TERM_printBootMessage(TERMINAL_HANDLE * handle);
+uint8_t 		TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode);
+void 			TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...);
+
+//Programm functions TODO evaluate usage and remove. Perhaps still required without taskPerCommand?
+#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+void 			TERM_removeProgramm(TERMINAL_HANDLE * handle);
+void 			TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog);
+void 			TERM_killProgramm(TERMINAL_HANDLE * handle);
+#endif
+
 
 #endif
