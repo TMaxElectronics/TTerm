@@ -65,6 +65,10 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("missing ACL element value for option \"-ra\"\r\n");
                 returnCode = TERM_CMD_EXIT_ERROR;
             }
+        }else if(strcmp(args[currArg], "-lp") == 0){
+            ttprintf("going to sleep, good night :) \r\n");
+            //SYS_setOscillatorSource(0b001);
+            //SYS_setOscillatorSource(0b101);
         }else if(strcmp(args[currArg], "-aa") == 0){
             if(++currArg < argCount){
                 char * newString = TERM_MALLOC(strlen(args[currArg])+1);

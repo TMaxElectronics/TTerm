@@ -4,11 +4,9 @@
 #ifndef TTERM_CONF
 #define TTERM_CONF
 
-#include "stm32l0xx_hal.h"
-
 //This is the name of the device stated in the command line as {user}@{TERM_NAME}>
 //NOTE: if CWD support is enabled {TERM_NAME} will be replaced with the CWD
-#define TERM_NAME "Stm32Test"
+#define TERM_NAME "SDLogger"
 
 //Enable to add void * port argument to printer function calls. This can be useful if you have multiple Terminals running and don't want to use multiple printer functions
 #define EXTENDED_PRINTF 1
@@ -23,17 +21,18 @@
 
 //Do you want every command to run in its own task?
 //NOTE: this requires FreeRTOS
-//#define TERM_startTaskPerCommand
+#define TERM_startTaskPerCommand
 
 //Should the terminal implement a working directory and include basic file commands?
-//#define TERM_SUPPORT_CWD
+//NOTE: this requires FatFS
+#define TERM_SUPPORT_CWD 1
 
 //If you want to have the "reset" command available you can define what function should be called here
-#define TERM_RESET_FUNCTION(X) NVIC_SystemReset()
+#define TERM_RESET_FUNCTION(X) __pic32_software_reset()
 
 //Heap functions
-#define TERM_MALLOC(X) malloc(X)
-#define TERM_FREE(X) free(X)
+#define TERM_MALLOC(X) pvPortMalloc(X)
+#define TERM_FREE(X) vPortFree(X)
 
 //What text should the terminal print at startup?
 #ifdef TERM_ENABLE_STARTUP_TEXT

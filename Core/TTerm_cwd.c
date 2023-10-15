@@ -243,6 +243,8 @@ uint8_t CMD_ls(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
         //clean up and send the last buffer
         f_closedir(&dir);
     }
+    
+    ttprintf("-----\r\n");
 
     return TERM_CMD_EXIT_SUCCESS;
 }

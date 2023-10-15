@@ -54,7 +54,7 @@ uint8_t REGISTER_chairMark(TermCommandDescriptor * desc){
 }
 
 static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
-    uint8_t currArg = 0;
+    /*uint8_t currArg = 0;
     uint32_t CPUBenchmarkEnabled = 0;
     uint32_t FPUBenchmarkEnabled = 0;
     uint32_t FileIOBenchmarkEnabled = 0;
@@ -203,6 +203,6 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
         vPortFree(data);
     }
 #endif
-    
+    */
     return TERM_CMD_EXIT_SUCCESS;
 }

@@ -85,10 +85,10 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
     //reset pointers
     newHandle->currEscSeqPos = 0xff;
     
-    #if TERM_SUPPORT_CWD == 1
+#if TERM_SUPPORT_CWD == 1
     newHandle->cwdPath = TERM_MALLOC(2);
     strcpy(newHandle->cwdPath, "/");
-    #endif
+#endif
 
     //if this is the first console we initialize we need to add the static commands
     if(!TERM_baseCMDsAdded){
@@ -101,11 +101,12 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
         TERM_addCommand(CMD_reset, "reset", "resets the fibernet", TERM_DEFAULT_STACKSIZE, &TERM_defaultList);
 #endif
         
-        #if TERM_SUPPORT_CWD == 1
+#if TERM_SUPPORT_CWD == 1
+        TERM_addCommand(CMD_cat, "cat", "a cat in the terminal?", 0, &TERM_defaultList);
         TERM_addCommand(CMD_ls, "ls", "List directory", 0, &TERM_defaultList);
         TERM_addCommand(CMD_cd, "cd", "Change directory", 0, &TERM_defaultList);
         TERM_addCommand(CMD_mkdir, "mkdir", "Make directory", 0, &TERM_defaultList);
-        #endif  
+#endif  
         
       
         TermCommandDescriptor * test = TERM_addCommand(CMD_testCommandHandler, "test", "tests stuff", TERM_DEFAULT_STACKSIZE, &TERM_defaultList);
