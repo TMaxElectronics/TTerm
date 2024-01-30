@@ -21,6 +21,9 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#ifndef TTERM_CMD
+#define TTERM_CMD
+
  #if PIC32 == 1
 #include <xc.h>
 #endif  
@@ -28,9 +31,6 @@
 
 #include "TTerm.h"
 #include "TTerm_AC.h"
-
-#ifndef TTERM_CMD
-#define TTERM_CMD
 
 extern AC_LIST_HEAD * head;
 

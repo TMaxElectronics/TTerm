@@ -26,7 +26,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "apps.h"
 
 #if __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
@@ -39,6 +38,8 @@
 #include "TTerm_cmd.h"
 #include "TTerm_AC.h"
 #include "TTerm_cwd.h"
+
+#include "apps.h"
 
 TermCommandDescriptor TERM_defaultList = {.nextCmd = 0, .commandLength = 0};
 unsigned TERM_baseCMDsAdded = 0;
@@ -725,25 +726,30 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case 32 ... 126: //normal letter
             TERM_checkForCopy(handle, TERM_CHECK_COMP_AND_HIST);
             
-            //TODO check for string length overflow
-            
             //this needs to happen even when a program is active
             
-            if(handle->inputBuffer[handle->currBufferPosition] != 0){      //check if we are at the end of our command
-                strsft(handle->inputBuffer, handle->currBufferPosition, 1);   
-                handle->inputBuffer[handle->currBufferPosition] = c; 
-                TERM_sendVT100Code(handle, _VT100_ERASE_LINE_END, 0);
-                ttprintfEcho("%s", &handle->inputBuffer[handle->currBufferPosition]);
-                TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferLength - handle->currBufferPosition);
-                handle->currBufferLength ++;
-                handle->currBufferPosition ++;
+            //check if there is still space in the buffer
+            if(handle->currBufferLength+1 < TERM_INPUTBUFFER_SIZE){
+                if(handle->inputBuffer[handle->currBufferPosition] != 0){      //check if we are at the end of our command
+                    strsft(handle->inputBuffer, handle->currBufferPosition, 1);   
+                    handle->inputBuffer[handle->currBufferPosition] = c; 
+                    TERM_sendVT100Code(handle, _VT100_ERASE_LINE_END, 0);
+                    ttprintfEcho("%s", &handle->inputBuffer[handle->currBufferPosition]);
+                    TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferLength - handle->currBufferPosition);
+                    handle->currBufferLength ++;
+                    handle->currBufferPosition ++;
+
+                }else{
+                    //we are at the end -> just delete the current character
+
+                    //check if we still have space in the buffer
+                    handle->inputBuffer[handle->currBufferPosition++] = c;
+                    handle->inputBuffer[handle->currBufferPosition] = 0;
+                    handle->currBufferLength ++;
+                    ttprintfEcho("%c", c);
+                }
             }else{
-                
-                //we are at the end -> just delete the current character
-                handle->inputBuffer[handle->currBufferPosition++] = c;
-                handle->inputBuffer[handle->currBufferPosition] = 0;
-                handle->currBufferLength ++;
-                ttprintfEcho("%c", c);
+                TERM_printDebug(handle, "ERROR: input buffer overflow!\r\n");
             }
             break;
             
@@ -751,7 +757,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             break;
             
         case 0x13:
-            TERM_printDebug(handle, "Stop your ctrl-s autism please, nothing to save here\r\n", c);
+            TERM_printDebug(handle, "Stop your ctrl-s autism please, nothing to save here\r\n");
             break;
             
         default:
