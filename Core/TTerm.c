@@ -1044,6 +1044,8 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
         program->cmdStream = xQueueCreate(5, sizeof(Term_progCMD_t));
         
         if(xTaskCreate(TERM_cmdTask, cmd->command, cmd->stackSize, (void*) program, tskIDLE_PRIORITY + 1, &program->task) == pdPASS){
+            //also send the programm into the foreground, to make sure no other one will be started until it is done
+            TERM_sendProgCMD(program, PROG_ENTERFOREGROUND, 0, 0);
             return TERM_CMD_EXIT_PROC_STARTED;
         }else{
             return TERM_CMD_EXIT_ERROR;
