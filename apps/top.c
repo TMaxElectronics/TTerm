@@ -76,7 +76,7 @@
 				uint32_t heapRemaining = xPortGetFreeHeapSize();
 				ttprintf("%sMem: \t%db total,\t %db free,\t %db used (%d%%)\r\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), configTOTAL_HEAP_SIZE, heapRemaining, configTOTAL_HEAP_SIZE - heapRemaining, ((configTOTAL_HEAP_SIZE - heapRemaining) * 100) / configTOTAL_HEAP_SIZE);
 
-				ttprintf("%ssorting: %s (options: p(id), n(ame), l(load), t(ime), s(tack), h(eap)) \r\n\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), top_sortingNamesPointers[currSortingMode]);
+				ttprintf("%ssorting: %s (options: p(id), n(ame), l(oad), t(ime), s(tack), h(eap)) \r\n\n", TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), top_sortingNamesPointers[currSortingMode]);
 
 				//new CPU load test
 				ttprintf("%s%s%s", TERM_getVT100Code(_VT100_BACKGROUND_COLOR, _VT100_WHITE), TERM_getVT100Code(_VT100_ERASE_LINE_END, 0), TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_BLACK));
