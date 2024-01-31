@@ -45,9 +45,10 @@ uint8_t CMD_cat(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
     
     if(argCount==1){ 
         char * filePath = FS_newCWD(handle->cwdPath, args[0]);
+        //TODO: check if we are opening a directory
         FIL* fp = f_open(filePath,FA_READ);
-        if(!fp){
-            ttprintf("Error file open\r\n");
+        if(fp < 0xff){
+            ttprintf("Error while opening file! (%d)\r\n", fp);
             vPortFree(filePath);
             vPortFree(buffer);
             return TERM_CMD_EXIT_SUCCESS;

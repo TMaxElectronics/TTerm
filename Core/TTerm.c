@@ -267,7 +267,7 @@ uint8_t TERM_processBuffer(uint8_t * data, uint16_t length, TERMINAL_HANDLE * ha
                 }
             }
         }else{
-            if(data[currPos] == 0x1B){     //ESC for V100 control sequences
+            if(data[currPos] == 0x1B){     //ESC for VT100 control sequences
                 handle->currEscSeqPos = 0;
             }else{
                 TERM_handleInput(data[currPos], handle);
