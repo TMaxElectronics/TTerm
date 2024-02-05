@@ -23,11 +23,13 @@
 
 #include <stdlib.h>
 
+#include "TTerm.h"
+#include "TTerm_AC.h"
 #include "string.h"
 #ifdef TERM_SUPPORT_CWD 
 #include "ff.h"
+#include "DMAconfig.h"
 #endif
-#include "TTerm_AC.h"
 
 #define APP_NAME "chairMark"
 #define APP_DESCRIPTION "almost a benchmark"
@@ -54,7 +56,7 @@ uint8_t REGISTER_chairMark(TermCommandDescriptor * desc){
 }
 
 static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
-    /*uint8_t currArg = 0;
+    uint8_t currArg = 0;
     uint32_t CPUBenchmarkEnabled = 0;
     uint32_t FPUBenchmarkEnabled = 0;
     uint32_t FileIOBenchmarkEnabled = 0;
@@ -69,8 +71,8 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
             ttprintf("\tchairMark [option]\r\n");
             ttprintf("\t\t options:\r\n");
             ttprintf("\t\t\t -cpu \t Tests raw instruction throughput\r\n");
-            ttprintf("\t\t\t -fpu [fileSize] [fast]\t test fpu throughput\r\n");
-            ttprintf("\t\t\t -fileIO \t tests external storage performance\r\n");
+            ttprintf("\t\t\t -fpu \t test fpu throughput\r\n");
+            ttprintf("\t\t\t -fileIO [fileSize] [fast]\t tests external storage performance\r\n");
             ttprintf("\t\t\t -term \t tests terminal printing speed\r\n");
             ttprintf("\t\t\t -disp \t tests display buffer performance\r\n");
             ttprintf("\t\t\t -all \t tests everything\r\n");
@@ -138,7 +140,7 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
             SYS_randFill(data, bytesToWrite);
             sprintf(data, "Hello World FUACK! :) I have some data for you: %d", rand());
 
-            if(SYS_isInRAM(fp)){
+            if(fp > 0xff){
 
                 if(FileIOBenchmarkFastModeEnabled) ttprintf("Fast mode enabled! only writing entire sectors (512 bytes)\r\n");  
 
@@ -173,7 +175,7 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
         memset(data, 'a', bytesToWrite);
         fp = f_open("/bMark.mark",FA_READ);
 
-        if(SYS_isInRAM(fp)){
+        if(fp > 0xff){
             ttprintf("Testing file read performance... file* = 0x%08x                                        ", fp);
             uint32_t f_writeRes = FR_OK;
             
@@ -203,6 +205,6 @@ static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args
         vPortFree(data);
     }
 #endif
-    */
+    
     return TERM_CMD_EXIT_SUCCESS;
 }
