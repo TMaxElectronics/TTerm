@@ -110,7 +110,7 @@ TERMINAL_HANDLE * TERM_createNewHandle(TermPrintHandler printFunction, unsigned 
 #endif  
         
       
-        TermCommandDescriptor * test = TERM_addCommand(CMD_testCommandHandler, "test", "tests stuff", TERM_DEFAULT_STACKSIZE, &TERM_defaultList);
+        TermCommandDescriptor * test = TERM_addCommand(CMD_testCommandHandler, "test", "tests stuff", TERM_DEFAULT_STACKSIZE+500, &TERM_defaultList);
         head = ACL_create();
         ACL_add(head, "-ra");
         ACL_add(head, "-r");

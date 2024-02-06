@@ -30,8 +30,12 @@
 #include <stdlib.h>
 
 #include "TTerm.h"
-#include "TTerm_config.h".h"
+#include "TTerm_config.h"
 #include "TTerm_cmd.h"
+#include "ff.h"
+#if __has_include("util.h")
+    #include "util.h"
+#endif
 
 //#include "system.h"
 //#include "UART.h"
@@ -56,6 +60,33 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("usage:\r\ntest -r [return code]\r\n");
                 return 0;
             }
+#if __has_include("util.h")
+        }else if(strcmp(args[currArg], "-c") == 0){
+            if(argCount > currArg + 1){
+                ttprintf("searching for \"%s\" in file \"config.cfg\"\r\n", args[currArg + 1]);
+                
+                //open file
+                FIL* log = f_open("/config.cfg", FA_READ);
+                if(log < 0xff){
+                    //file open failed
+                    ttprintf("file opening failed (%d)\r\n", log);
+                    return TERM_CMD_EXIT_SUCCESS;
+                }
+                
+                char * ret = CONFIG_getKey(log, args[currArg + 1]);
+                if(ret == NULL){
+                    ttprintf("key not found\r\n");
+                }else{
+                    ttprintf("key found with value=\"%s\"\r\n", ret);
+                    vPortFree(ret);
+                }
+                
+                return TERM_CMD_EXIT_SUCCESS;
+            }else{
+                ttprintf("usage:\r\ntest -c [key to search for]\r\n");
+                return TERM_CMD_EXIT_ERROR;
+            }
+#endif
         }else if(strcmp(args[currArg], "-ra") == 0){
             if(++currArg < argCount){
                 ACL_remove(head, args[currArg]);
