@@ -86,6 +86,23 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("usage:\r\ntest -c [key to search for]\r\n");
                 return TERM_CMD_EXIT_ERROR;
             }
+            
+        }else if(strcmp(args[currArg], "-atoiFP") == 0){
+            if(argCount > currArg + 2){
+                int32_t exponent = atoi(args[currArg + 2]);
+                ttprintf("converting \"%s\" to int with base exponent %d\r\n", args[currArg + 1], exponent);
+                ttprintf("res=%d\r\n", atoiFP(args[currArg+1], 100, exponent, 1));
+                
+                return TERM_CMD_EXIT_SUCCESS;
+            }else if(argCount > currArg + 1){
+                ttprintf("converting \"%s\" to int with base exponent 0\r\n", args[currArg + 1]);
+                ttprintf("res=%d\r\n", atoiFP(args[currArg+1], 100, 0, 1));
+                
+                return TERM_CMD_EXIT_SUCCESS;
+            }else{
+                ttprintf("usage:\r\ntest -atoiFP [value to convert]\r\n");
+                return TERM_CMD_EXIT_ERROR;
+            }
 #endif
         }else if(strcmp(args[currArg], "-ra") == 0){
             if(++currArg < argCount){
