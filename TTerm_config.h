@@ -28,7 +28,7 @@
 #define TERM_SUPPORT_CWD 1
 
 //If you want to have the "reset" command available you can define what function should be called here
-#define TERM_RESET_FUNCTION(X) __pic32_software_reset()
+#define TERM_RESET_FUNCTION(X) SYS_softwareReset()
 
 //Heap functions
 #define TERM_MALLOC(X) pvPortMalloc(X)
