@@ -132,7 +132,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
         }else if(strcmp(args[currArg], "-i") == 0){
             ttprintf("testing reading of input:\r\n");
             ttprintf("please enter your name:"); 
-            char * name = ttgetline();
+            char * name = ttgetline(portMAX_DELAY);
             ttprintf(" ok!\r\n");
             ttprintf("Hello %s :)\r\n", name);
             TERM_FREE(name);
@@ -141,7 +141,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
             uint32_t chip = 0;
             ttprintf("What is the number of the SID Chip the C64 (MOSxxxx)?\r\n>"); 
             while(1){
-                char * id = ttgetline();
+                char * id = ttgetline(portMAX_DELAY);
                 ttprintf("\r\n");
                 chip = atoi(id);
                 TERM_FREE(id);
