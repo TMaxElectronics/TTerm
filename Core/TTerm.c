@@ -442,7 +442,8 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             if(handle->currBufferLength != 0){
                 //send newline
                 ttprintfEcho("\r\n", handle->inputBuffer);
-
+                uint8_t retCode = TERM_CMD_EXIT_ERROR;
+                
 #if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
                 //is a program currently active?
                 if(handle->currProgram != NULL){
@@ -454,6 +455,8 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                         xStreamBufferSend(handle->currProgram->inputStream, handle->inputBuffer, sizeof(char) * handle->currBufferLength, 0);
                         xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
                     }
+                    
+                    retCode = TERM_CMD_EXIT_SUCCESS;
 #else
 				if(0){
 #endif
@@ -477,7 +480,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                     handle->currHistoryReadPosition = handle->currHistoryWritePosition;
 
                 //interpret and run the command
-                    uint8_t retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
+                    retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
                     (*handle->errorPrinter)(handle, retCode);
                 }
 
