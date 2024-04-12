@@ -6,7 +6,7 @@
 
 //This is the name of the device stated in the command line as {user}@{TERM_NAME}>
 //NOTE: if CWD support is enabled {TERM_NAME} will be replaced with the CWD
-#define TERM_NAME "SDLogger"
+#define TERM_NAME "SmartBox"
 
 //Enable to add void * port argument to printer function calls. This can be useful if you have multiple Terminals running and don't want to use multiple printer functions
 #define EXTENDED_PRINTF 1
@@ -25,7 +25,7 @@
 
 //Should the terminal implement a working directory and include basic file commands?
 //NOTE: this requires FatFS
-#define TERM_SUPPORT_CWD 1
+//#define TERM_SUPPORT_CWD
 
 //If you want to have the "reset" command available you can define what function should be called here
 #define TERM_RESET_FUNCTION(X) SYS_softwareReset()

@@ -102,6 +102,7 @@ extern TermCommandDescriptor TERM_defaultList;
 
 		//function abbreviations
 		#define ttgetline() TERM_getLine(handle, portMAX_DELAY)
+		#define ttgetlineTimeout(X) TERM_getLine(handle, X)
 		#define ttgetc(X) TERM_getChar(handle, X)
 
 		//enums
@@ -253,6 +254,9 @@ void 			TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...);
 void 			TERM_removeProgramm(TERMINAL_HANDLE * handle);
 void 			TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog);
 void 			TERM_killProgramm(TERMINAL_HANDLE * handle);
+
+uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout);
+char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout);
 #endif
 
 

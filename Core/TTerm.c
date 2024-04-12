@@ -925,13 +925,16 @@ static void TERM_cmdTask(void * pvData){
     while(1);
 }
 
-char TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
+uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
     //get prog pointer
     TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
-    char c = 0;
+    uint16_t c = 0;
     
     //try to receive a character from the buffer, if we get nothing c will remain NULL
-    xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout);
+    if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) != sizeof(c)){
+        xStreamBufferReset(prog->inputStream);
+        return 0;
+    }
     
     //return what we got, or NULL if we didn't get anything
     return c;
@@ -955,7 +958,7 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
     uint32_t currPos = 0;
     while(1){
         if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) == 0){
-            c = 0xff;
+            c = 0;
             break;
         }else{
             if(c == '\n'){ 
@@ -977,19 +980,15 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
         }
     }    
    
+    //reset inputmode
+    TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
     
-    if(c == 0xff){
+    if(c == 0){
         //timeout
         TERM_FREE(ret);
         
-        //reset inputmode
-        TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
-        
         return NULL;
     }
-    
-    //reset inputmode
-    TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
     
     return ret;
 }
@@ -1370,6 +1369,9 @@ void TERM_sendVT100Code(TERMINAL_HANDLE * handle, uint16_t cmd, uint8_t var){
             break;
         case _VT100_CURSOR_DOWN_BY:
             ttprintfEcho("\x1b[%dB", var);
+            break;
+        case _VT100_CURSOR_UP_BY:
+            ttprintfEcho("\x1b[%dA", var);
             break;
             
     }

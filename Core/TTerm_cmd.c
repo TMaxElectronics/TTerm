@@ -86,7 +86,8 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("usage:\r\ntest -c [key to search for]\r\n");
                 return TERM_CMD_EXIT_ERROR;
             }
-            
+#endif
+#if __has_include("util.h")
         }else if(strcmp(args[currArg], "-atoiFP") == 0){
             if(argCount > currArg + 2){
                 int32_t exponent = atoi(args[currArg + 2]);
