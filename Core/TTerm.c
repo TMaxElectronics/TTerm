@@ -441,7 +441,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             //is there any data in the buffer?
             if(handle->currBufferLength != 0){
                 //send newline
-                ttprintfEcho("\r\n", handle->inputBuffer);
+                ttprintfEcho("\r\n");
                 uint8_t retCode = TERM_CMD_EXIT_ERROR;
                 
 
@@ -974,6 +974,7 @@ uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
     uint16_t c = 0;
     
     //try to receive a character from the buffer, if we get nothing c will remain NULL
+    //as we are in input mode direct we need to read 16bits from the buffer 
     if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) != sizeof(c)){
         xStreamBufferReset(prog->inputStream);
         return 0;
@@ -1004,6 +1005,8 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout, uint32_t control
     
     uint32_t currPos = 0;
     while(1){
+        //why do we read 8bit words from the buffer? In INPUTMODE_GET_LINE the input parser runs and deals with all vt100 character, so no 16bit words would ever be in the buffer. 
+        //Plus all writes in this mode are limited to 8bit only
         if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) == 0){
             breakCause = 0xff;
             break;
