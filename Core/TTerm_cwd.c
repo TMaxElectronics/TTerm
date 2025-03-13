@@ -56,7 +56,7 @@ uint8_t CMD_cat(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
         while(f_gets(buffer,BUFFER_SIZE,fp) !=  0 ){
             ttprintf("%s", buffer);  
             vTaskDelay(1);
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             if(ttgetc(0) == CTRL_C){
                 ttprintf("\r\n\n%scat cancelled%s\r\n", TERM_getVT100Code(_VT100_FOREGROUND_COLOR, _VT100_RED), TERM_getVT100Code(_VT100_RESET_ATTRIB, 0));
                 break;

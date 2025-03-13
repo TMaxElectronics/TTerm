@@ -27,7 +27,7 @@
 #include <stdarg.h>
 
 
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -317,7 +317,7 @@ static void resetInputBuffer(TERMINAL_HANDLE * handle){//reset inputbuffer
 }
 
 static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     //check if we have any program commands to process (that could be enterForeground, exitForeground, return etc.)
     Term_progCMD_t currProgCMD;
     while(xQueueReceive(handle->cmdStream, &currProgCMD, 0)){
@@ -444,7 +444,8 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                 ttprintfEcho("\r\n", handle->inputBuffer);
                 uint8_t retCode = TERM_CMD_EXIT_ERROR;
                 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
                 //is a program currently active?
                 if(handle->currProgram != NULL){
                     //yes, don't interpret any commands or add anything to the history
@@ -491,7 +492,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             }else{
 
                 //no data in the buffer, just send an empty line if no program is active, and a newline into the buffer otherwise
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             	if(handle->currProgram != NULL){
 					xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
 #else
@@ -508,7 +509,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             
             ttprintfEcho("\n\r^C");
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram != NULL){
                 //yes :) we need to send the kill char to it
@@ -589,7 +590,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_CURSOR_UP:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
 #else
@@ -620,7 +621,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_CURSOR_DOWN:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
 #else
@@ -651,7 +652,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case '\t':      //tab
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
                 //no, do autocomplete
@@ -687,7 +688,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_BACKWARDS_TAB:
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
                 //no, do autocomplete
@@ -714,7 +715,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             
         case _VT100_RESET:
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram != NULL){
                 //yes :) we need to kill it to reset the terminal to its default state
@@ -761,7 +762,8 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             break;
 
         //check for control chars
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
         case 0x04:  //ctrl-d
         case 0x19:  //ctrl-y
         case 0x18:  //ctrl-x
@@ -793,7 +795,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             break;
     }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     vTaskExitCritical();
 #endif
     return TERM_CMD_EXIT_SUCCESS;
@@ -879,7 +881,7 @@ TermCommandDescriptor * TERM_findCMDFromName(TermCommandDescriptor * list, char 
     return NULL;
 }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
 //sends a program command to the interpreter
 static uint32_t TERM_sendProgCMD(TermProgram * prog, ProgCMDType_t cmd, uint32_t arg, void * data){
     Term_progCMD_t cmdStruct = {.cmd = cmd, .arg = arg, .data = data, .src = prog};
@@ -966,13 +968,16 @@ char * TERM_getCommandString(){
     return prog->commandString;
 }
 
-char TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
+uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
     //get prog pointer
     TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
-    char c = 0;
+    uint16_t c = 0;
     
     //try to receive a character from the buffer, if we get nothing c will remain NULL
-    xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout);
+    if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) != sizeof(c)){
+        xStreamBufferReset(prog->inputStream);
+        return 0;
+    }
     
     //return what we got, or NULL if we didn't get anything
     return c;
@@ -1071,7 +1076,7 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout, uint32_t control
    
     //reset inputmode
     TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
-    
+	
     if(breakCause == 0xff){
         //timeout or other error
         
@@ -1098,7 +1103,7 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
         
         char * dataPtr;
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
         //allocate persistent memory for args and copy them
         dataPtr = TERM_MALLOC(dataLength + 1);
         dataPtr[dataLength] = 0; //we only need to set the string terminator to 0, the rest will be set by memcpy
@@ -1115,7 +1120,7 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
             TERM_seperateArgs(dataPtr, dataLength, args);
         }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
         TermProgram * program = TERM_MALLOC(sizeof(TermProgram));
         memset(program, 0, sizeof(TermProgram));
         
@@ -1460,6 +1465,9 @@ void TERM_sendVT100Code(TERMINAL_HANDLE * handle, uint16_t cmd, uint8_t var){
             break;
         case _VT100_CURSOR_DOWN_BY:
             ttprintfEcho("\x1b[%dB", var);
+            break;
+        case _VT100_CURSOR_UP_BY:
+            ttprintfEcho("\x1b[%dA", var);
             break;
             
     }

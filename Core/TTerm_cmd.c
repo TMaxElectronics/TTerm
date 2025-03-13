@@ -33,7 +33,7 @@
 #include "TTerm_config.h"
 #include "TTerm_cmd.h"
 
-#if __has_include("util.h")
+#if !__is_compiling || __has_include("util.h")
     #include "util.h"
 #endif
 
@@ -60,7 +60,7 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("usage:\r\ntest -r [return code]\r\n");
                 return 0;
             }
-#if __has_include("util.h") && __has_include("ff.h")
+#if (__has_include("util.h") && __has_include("ff.h"))
         }else if(strcmp(args[currArg], "-c") == 0){
             if(argCount > currArg + 1){
                 ttprintf("searching for \"%s\" in file \"config.cfg\"\r\n", args[currArg + 1]);
@@ -86,7 +86,8 @@ uint8_t CMD_testCommandHandler(TERMINAL_HANDLE * handle, uint8_t argCount, char 
                 ttprintf("usage:\r\ntest -c [key to search for]\r\n");
                 return TERM_CMD_EXIT_ERROR;
             }
-            
+#endif
+#if !__is_compiling || __has_include("util.h")
         }else if(strcmp(args[currArg], "-atoiFP") == 0){
             if(argCount > currArg + 2){
                 int32_t exponent = atoi(args[currArg + 2]);

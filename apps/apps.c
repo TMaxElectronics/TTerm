@@ -23,14 +23,14 @@
 #include "apps.h"
 #include "chairmark.h"
 
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 #include "top.h"
 #endif
 
 uint8_t REGISTER_apps(TermCommandDescriptor * desc){
     
 //register top if freeRTOS is available
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
     REGISTER_top(desc);
 #endif
     REGISTER_chairMark(desc);

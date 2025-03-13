@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 //include freeRTOS if available
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -55,7 +55,7 @@
 #define TERM_CMD_EXIT_PROC_STARTED 		0xfe
 #define TERM_CMD_PROC_RUNNING 			0x80
 
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 	#define TERM_DEFAULT_STACKSIZE 		configMINIMAL_STACK_SIZE + 100
 #else
 	#define TERM_DEFAULT_STACKSIZE 		0
@@ -99,7 +99,7 @@ extern TermCommandDescriptor TERM_defaultList;
 
 //Defines for startTaskPerCommand. Make sure freeRTOS is available before actually including this
 #if defined TERM_startTaskPerCommand
-	#if __has_include("FreeRTOS.h")
+	#if !__is_compiling || __has_include("FreeRTOS.h")
 
 
         #define TERM_CONTROL_CANCEL             0
@@ -186,7 +186,7 @@ struct __TERMINAL_HANDLE__{
     TermPrintHandler print;
     TermErrorPrinter errorPrinter;
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     TermProgram * nextProgram;
     TermProgram * currProgram;
 
@@ -260,12 +260,12 @@ uint8_t 		TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode);
 void 			TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...);
 
 //Programm functions TODO evaluate usage and remove. Perhaps still required without taskPerCommand?
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
 void 			TERM_removeProgramm(TERMINAL_HANDLE * handle);
 void 			TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog);
 void 			TERM_killProgramm(TERMINAL_HANDLE * handle);
 char        *   TERM_getCommandString();
-char            TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout);
+uint16_t        TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout);
 char        *   TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout, uint32_t controlBehaviour);
 #endif
 
