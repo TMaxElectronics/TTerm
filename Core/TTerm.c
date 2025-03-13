@@ -27,7 +27,7 @@
 #include <stdarg.h>
 
 
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -317,7 +317,7 @@ static void resetInputBuffer(TERMINAL_HANDLE * handle){//reset inputbuffer
 }
 
 static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     //check if we have any program commands to process (that could be enterForeground, exitForeground, return etc.)
     Term_progCMD_t currProgCMD;
     while(xQueueReceive(handle->cmdStream, &currProgCMD, 0)){
@@ -442,8 +442,9 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             if(handle->currBufferLength != 0){
                 //send newline
                 ttprintfEcho("\r\n", handle->inputBuffer);
-
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+                uint8_t retCode = TERM_CMD_EXIT_ERROR;
+                
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
                 //is a program currently active?
                 if(handle->currProgram != NULL){
                     //yes, don't interpret any commands or add anything to the history
@@ -454,6 +455,8 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                         xStreamBufferSend(handle->currProgram->inputStream, handle->inputBuffer, sizeof(char) * handle->currBufferLength, 0);
                         xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
                     }
+                    
+                    retCode = TERM_CMD_EXIT_SUCCESS;
 #else
 				if(0){
 #endif
@@ -477,17 +480,18 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                     handle->currHistoryReadPosition = handle->currHistoryWritePosition;
 
                 //interpret and run the command
-                    uint8_t retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
+                    retCode = TERM_interpretCMD(handle->inputBuffer, handle->currBufferLength, handle);
                     (*handle->errorPrinter)(handle, retCode);
                 }
 
                 handle->currBufferPosition = 0;
                 handle->currBufferLength = 0;
                 handle->inputBuffer[handle->currBufferPosition] = 0;
+                return retCode;
             }else{
 
                 //no data in the buffer, just send an empty line if no program is active, and a newline into the buffer otherwise
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             	if(handle->currProgram != NULL){
 					xStreamBufferSend(handle->currProgram->inputStream, "\n", sizeof(char), 0);
 #else
@@ -502,13 +506,13 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case 0x03:      //CTRL+c
             //TODO reset current buffer
             
-            ttprintfEcho("\n^C");
+            ttprintfEcho("\n\r^C");
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram != NULL){
-                //yes :) we need to kill it
-                //TODO
+                //yes :) we need to send the kill char to it
+                xStreamBufferSend(handle->currProgram->inputStream, &c, sizeof(char), 0);
 #else
 			if(0){
 #endif
@@ -585,7 +589,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_CURSOR_UP:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
 #else
@@ -616,7 +620,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_CURSOR_DOWN:
             TERM_checkForCopy(handle, TERM_CHECK_COMP);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
 #else
@@ -647,7 +651,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case '\t':      //tab
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
                 //no, do autocomplete
@@ -683,7 +687,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
         case _VT100_BACKWARDS_TAB:
             TERM_checkForCopy(handle, TERM_CHECK_HIST);
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram == NULL){
                 //no, do autocomplete
@@ -710,7 +714,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             
         case _VT100_RESET:
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
             //is there a program in the foreground?
             if(handle->currProgram != NULL){
                 //yes :) we need to kill it to reset the terminal to its default state
@@ -755,19 +759,44 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             
         case 0:
             break;
+
+        //check for control chars
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
+        case 0x04:  //ctrl-d
+        case 0x19:  //ctrl-y
+        case 0x18:  //ctrl-x
+        case 0x17:  //ctrl-w
+        case 0x16:  //ctrl-v
+        case 0x13:  //ctrl-s
             
-        case 0x13:
+            //is there a program in the foreground?
+            if(handle->currProgram != NULL){
+                //a programm is currently running in the foreground => send any control chars to it directly
+                xStreamBufferSend(handle->currProgram->inputStream, &c, sizeof(char), 0);
+            }else{
+                if(c == 0x13){ 
+                    TERM_printDebug(handle, "Stop your ctrl-s autism please, nothing to save here\r\n");
+                }else{
+                    TERM_printDebug(handle, "unknown code received: 0x%02x\r\n", c);
+                }
+            }
+            break;
+#else
+        
+        case 0x13:  //ctrl-s
             TERM_printDebug(handle, "Stop your ctrl-s autism please, nothing to save here\r\n");
             break;
+#endif
             
         default:
             TERM_printDebug(handle, "unknown code received: 0x%02x\r\n", c);
             break;
     }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     vTaskExitCritical();
 #endif
+    return TERM_CMD_EXIT_SUCCESS;
 }
 
 void TERM_checkForCopy(TERMINAL_HANDLE * handle, COPYCHECK_MODE mode){
@@ -828,7 +857,6 @@ void strsft(char * src, int32_t startByte, int32_t offset){
 }
 
 TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle){
-    uint8_t currPos = 0;
     uint16_t cmdLength = handle->currBufferLength;
     
     char * firstSpace = strchr(handle->inputBuffer, ' ');
@@ -836,16 +864,22 @@ TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle){
         cmdLength = (uint16_t) ((uint32_t) firstSpace - (uint32_t) handle->inputBuffer);
     }
     
-    TermCommandDescriptor * currCmd = handle->cmdListHead->nextCmd;
-    for(;currPos < handle->cmdListHead->commandLength; currPos++){
-        if(currCmd->commandLength == cmdLength && strncmp(handle->inputBuffer, currCmd->command, cmdLength) == 0) return currCmd;
+    return TERM_findCMDFromName(handle->cmdListHead, handle->inputBuffer, cmdLength);
+}
+
+TermCommandDescriptor * TERM_findCMDFromName(TermCommandDescriptor * list, char * name, uint32_t length){
+    uint32_t currPos = 0;
+    TermCommandDescriptor * currCmd = list->nextCmd;
+    
+    for(;currPos < list->commandLength; currPos++){
+        if(currCmd->commandLength == length && strncmp(name, currCmd->command, length) == 0) return currCmd;
         currCmd = currCmd->nextCmd;
     }
     
     return NULL;
 }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
 //sends a program command to the interpreter
 static uint32_t TERM_sendProgCMD(TermProgram * prog, ProgCMDType_t cmd, uint32_t arg, void * data){
     Term_progCMD_t cmdStruct = {.cmd = cmd, .arg = arg, .data = data, .src = prog};
@@ -862,7 +896,7 @@ static void TERM_programEnterForeground(TermProgram * prog){
     TERM_sendProgCMD(prog, PROG_ENTERFOREGROUND, 0, 0);
 }
 
-uint32_t TERM_programExitForeground(TermProgram * prog){
+static uint32_t TERM_programExitForeground(TermProgram * prog){
     TERM_sendProgCMD(prog, PROG_EXITFOREGROUND, 0, 0);
 }
 
@@ -925,6 +959,13 @@ static void TERM_cmdTask(void * pvData){
     while(1);
 }
 
+char * TERM_getCommandString(){
+    //get prog pointer
+    TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
+    
+    return prog->commandString;
+}
+
 uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
     //get prog pointer
     TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
@@ -940,7 +981,7 @@ uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout){
     return c;
 }
 
-char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
+char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout, uint32_t controlBehaviour){
     //get prog pointer
     TermProgram *prog = (TermProgram *) pvTaskGetCurrentTaskParameters();
     
@@ -955,36 +996,89 @@ char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout){
     //now wait for the string to be read. Terminal will dump the string including a "\n" termination into the input stream
     char * ret = TERM_MALLOC(sizeof(char) * TERM_INPUTBUFFER_SIZE);
     char c = 0;
+    
+    //contains the reason we broke the loop. If this is 0 the loop exited normally and the string needs to be returned
+    uint32_t breakCause = 0;
+    
     uint32_t currPos = 0;
     while(1){
         if(xStreamBufferReceive(prog->inputStream, &c, sizeof(c), timeout) == 0){
-            c = 0;
+            breakCause = 0xff;
             break;
         }else{
             if(c == '\n'){ 
                 //terminate string
                 ret[currPos] = 0;
                 break;
+                
+            //is c a control character?
+            }else if(c != 0 && c < 32){
+                //yes => check what we need to do
+                if(controlBehaviour == TERM_CONTROL_CANCEL){
+                    //cancel input. To tell the task what happened we write the char to the beginning and terminate the string afterwards
+                    ret[0] = c;
+                    ret[1] = 0;
+                    currPos = 1;
+                    break;
+                    
+                }else if(controlBehaviour == TERM_CONTROL_ENDLINE_KEEP){
+                    //end the line upon writing of a control character but write the control character into the buffer
+                    
+                    if(currPos == TERM_INPUTBUFFER_SIZE-1){
+                        //not enough space in the buffer for two chars :(
+                        
+                        //just terminate the string here
+                        ret[currPos] = 0;
+                    }else{
+                        //write the cc into the buffer
+                        ret[currPos] = c;
+                        currPos++;
+                        //terminate the string
+                        ret[currPos] = 0;
+                    }
+                    
+                    //break the loop
+                    break;
+                        
+                }else if(controlBehaviour == TERM_CONTROL_ENDLINE_DISCARD){
+                    //end the line upon writing of a control character and end the line like usually
+                    ret[currPos] = 0;
+                    break;
+                        
+                }else{
+                    //default / TERM_CONTROL_IGNORE
+                    
+                    //is c "ctrl+c"?
+                    if(c == CTRL_C){ 
+                        //yes => since the program wouldn't recognise this we need to stop input ourselves
+                        ret[currPos] = 0;
+                        breakCause = 0xff;
+                        break;
+                    }
+
+                    //treat the character like a normal char and write it to the buffer
+                    ret[currPos++] = c;
+                }
             }else{
                 ret[currPos++] = c;
             }
+            
             if(currPos == TERM_INPUTBUFFER_SIZE){ 
                 //terminate string
                 ret[currPos-1] = 0;
                 
-                //reset inputmode
-                TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
-                
-                return ret;
+                break;
             }
         }
     }    
    
     //reset inputmode
     TERM_sendProgCMD(prog, PROG_SETINPUTMODE, INPUTMODE_DIRECT, NULL);
-    
-    if(c == 0){
-        //timeout
+
+    if(breakCause == 0xff){
+        //timeout or other error
+        
+        //free buffer
         TERM_FREE(ret);
         
         return NULL;
@@ -1007,7 +1101,7 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
         
         char * dataPtr;
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
         //allocate persistent memory for args and copy them
         dataPtr = TERM_MALLOC(dataLength + 1);
         dataPtr[dataLength] = 0; //we only need to set the string terminator to 0, the rest will be set by memcpy
@@ -1024,7 +1118,7 @@ uint8_t TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * ha
             TERM_seperateArgs(dataPtr, dataLength, args);
         }
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
         TermProgram * program = TERM_MALLOC(sizeof(TermProgram));
         memset(program, 0, sizeof(TermProgram));
         

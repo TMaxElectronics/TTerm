@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 //include freeRTOS if available
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -45,6 +45,7 @@
 
 //Return Code Defines
 #define CTRL_C 							0x03
+#define CTRL_D 							0x04
 
 #define TERM_ARGS_ERROR_STRING_LITERAL 	0xffff
 
@@ -54,7 +55,7 @@
 #define TERM_CMD_EXIT_PROC_STARTED 		0xfe
 #define TERM_CMD_PROC_RUNNING 			0x80
 
-#if __has_include("FreeRTOS.h")
+#if !__is_compiling || __has_include("FreeRTOS.h")
 	#define TERM_DEFAULT_STACKSIZE 		configMINIMAL_STACK_SIZE + 100
 #else
 	#define TERM_DEFAULT_STACKSIZE 		0
@@ -98,11 +99,18 @@ extern TermCommandDescriptor TERM_defaultList;
 
 //Defines for startTaskPerCommand. Make sure freeRTOS is available before actually including this
 #if defined TERM_startTaskPerCommand
-	#if __has_include("FreeRTOS.h")
+	#if !__is_compiling || __has_include("FreeRTOS.h")
 
+
+        #define TERM_CONTROL_CANCEL             0
+        #define TERM_CONTROL_ENDLINE_KEEP       1
+        #define TERM_CONTROL_ENDLINE_DISCARD    2
+        #define TERM_CONTROL_IGNORE             3
+
+    
 		//function abbreviations
-		#define ttgetline() TERM_getLine(handle, portMAX_DELAY)
-		#define ttgetlineTimeout(X) TERM_getLine(handle, X)
+		#define ttgetline(X) TERM_getLine(handle, X, TERM_CONTROL_IGNORE)
+		#define ttgetlineSpecial(X, Y) TERM_getLine(handle, portMAX_DELAY, Y)
 		#define ttgetc(X) TERM_getChar(handle, X)
 
 		//enums
@@ -129,6 +137,7 @@ extern TermCommandDescriptor TERM_defaultList;
 			TermProgram 		  	* src;
 			void 				  	* data;
 		} Term_progCMD_t;
+        
 	#else
 		//TERM_startTaskPerCommand is set but freeRTOS is not available, throw an error so the user knows whats happening
 		#error TERM_startTaskPerCommand requires FreeRTOS, but couldnt find it!
@@ -177,7 +186,7 @@ struct __TERMINAL_HANDLE__{
     TermPrintHandler print;
     TermErrorPrinter errorPrinter;
 
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
     TermProgram * nextProgram;
     TermProgram * currProgram;
 
@@ -235,6 +244,7 @@ uint8_t 		TERM_buildCMDList();
 //command interpreter
 uint16_t 		TERM_countArgs(const char * data, uint16_t dataLength);
 TermCommandDescriptor * TERM_findCMD(TERMINAL_HANDLE * handle);
+TermCommandDescriptor * TERM_findCMDFromName(TermCommandDescriptor * list, char * name, uint32_t length);
 uint8_t 		TERM_interpretCMD(char * data, uint16_t dataLength, TERMINAL_HANDLE * handle);
 uint8_t 		TERM_seperateArgs(char * data, uint16_t dataLength, char ** buff);
 uint8_t 		TERM_findLastArg(TERMINAL_HANDLE * handle, char * buff, uint8_t * lenBuff);
@@ -250,13 +260,14 @@ uint8_t 		TERM_defaultErrorPrinter(TERMINAL_HANDLE * handle, uint32_t retCode);
 void 			TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...);
 
 //Programm functions TODO evaluate usage and remove. Perhaps still required without taskPerCommand?
-#if defined TERM_startTaskPerCommand && __has_include("FreeRTOS.h")
+#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
 void 			TERM_removeProgramm(TERMINAL_HANDLE * handle);
 void 			TERM_attachProgramm(TERMINAL_HANDLE * handle, TermProgram * prog);
 void 			TERM_killProgramm(TERMINAL_HANDLE * handle);
 
-uint16_t TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout);
-char * TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout);
+char        *   TERM_getCommandString();
+uint16_t        TERM_getChar(TERMINAL_HANDLE * handle, uint32_t timeout);
+char        *   TERM_getLine(TERMINAL_HANDLE * handle, uint32_t timeout, uint32_t controlBehaviour);
 #endif
 
 
