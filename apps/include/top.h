@@ -24,7 +24,7 @@
 #if !defined(app_top_H)
 #define app_top_H
 
-#if !__has_include("FreeRTOS.h")
+#if __is_compiling && !__has_include("FreeRTOS.h")
 #error Using app "Top" Requires FreeRTOS!
 #endif
 
