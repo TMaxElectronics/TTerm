@@ -340,6 +340,16 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                     
                     //reset buffer
                     resetInputBuffer(handle);
+                }else{
+                    //no it wasn't, user might have been typing something. Is this the case?
+                    if(handle->currBufferLength != 0){
+                        //erase the line
+                        TERM_sendVT100Code(handle, _VT100_ERASE_LINE, 0);
+                        
+                        //write the identifier and buffer
+                        ttprintfEcho("\r\n\r\n%s@%s>%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
+                        if(handle->inputBuffer[handle->currBufferPosition] != 0) TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferLength - handle->currBufferPosition);
+                    }
                 }
                 
                 //free the data. This needs to happen here, as this is the last place in the code the data is accessed after program exit
@@ -429,8 +439,6 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             return 1;
         }
     }
-    
-    vTaskEnterCritical();
 #endif
     
     switch(c){
@@ -488,6 +496,7 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
                 handle->currBufferPosition = 0;
                 handle->currBufferLength = 0;
                 handle->inputBuffer[handle->currBufferPosition] = 0;
+                
                 return retCode;
             }else{
 
@@ -795,9 +804,6 @@ static uint8_t TERM_handleInput(uint16_t c, TERMINAL_HANDLE * handle){
             break;
     }
 
-#if defined TERM_startTaskPerCommand && (!__is_compiling || __has_include("FreeRTOS.h"))
-    vTaskExitCritical();
-#endif
     return TERM_CMD_EXIT_SUCCESS;
 }
 
@@ -902,41 +908,23 @@ static uint32_t TERM_programExitForeground(TermProgram * prog){
     TERM_sendProgCMD(prog, PROG_EXITFOREGROUND, 0, 0);
 }
 
+//TODO: make this thread safe! Its likely to cause problems as is
 static void TERM_programReturn(TermProgram * prog, uint8_t retCode){
     //print return string and inputbuffer if its not empty
     TERMINAL_HANDLE * handle = prog->handle;
-    (*handle->errorPrinter)(handle, retCode);
     
-    if(handle->currBufferLength != 0){
-        ttprintfEcho("%s", handle->currUserName, TERM_DEVICE_NAME, handle->inputBuffer);
-        if(handle->inputBuffer[handle->currBufferPosition] != 0) TERM_sendVT100Code(handle, _VT100_CURSOR_BACK_BY, handle->currBufferLength - handle->currBufferPosition);
-    }
+    //print exit code if its not success
+    if(retCode != TERM_CMD_EXIT_SUCCESS) ttprintfEcho("\r\n\nCommand \"%s\" exited with code %d\r\n", prog->commandString, retCode);
+    
+    //also print a new input line
+    ttprintfEcho("\r\n\r\n%s@%s>", handle->currUserName, TERM_DEVICE_NAME);
     
     //return terminal (automatically frees memory and exits foreground if needed)
     TERM_sendProgCMD(prog, PROG_RETURN, retCode, 0);
 }
 
 void TERM_killProgramm(TERMINAL_HANDLE * handle){
-	//TODO re-implement!
-
-    uint8_t currArg = 0;
-    uint8_t argCount = handle->currProgram->argCount;
-    char ** args = handle->currProgram->args;
-    for(;currArg<argCount; currArg++){
-        TERM_FREE(args[currArg]);
-    }
-
-    TERM_sendVT100Code(handle, _VT100_RESET, 0); TERM_sendVT100Code(handle, _VT100_CURSOR_POS1, 0);
-    TERM_printBootMessage(handle);
-
-    TaskHandle_t task = handle->currProgram->task;
-    vStreamBufferDelete(handle->currProgram->inputStream);
-    TERM_FREE(handle->currProgram);
-    handle->currProgram = NULL;
-    vTaskDelete(task);
-    while(1){
-        vTaskDelay(100);
-    }
+	//TODO re-implement! Not used at the moment. Function to kill the program currently in the foreground (f.E. due to pressing ctrl+c multiple times)
 }
 
 static void TERM_cmdTask(void * pvData){
