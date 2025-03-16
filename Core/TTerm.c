@@ -154,6 +154,9 @@ void TERM_destroyHandle(TERMINAL_HANDLE * handle){
 }
 
 void TERM_printDebug(TERMINAL_HANDLE * handle, char * format, ...){
+    //is handle valid?
+    if(handle == NULL) return;
+    
     //TODO make this nicer... we don't need a double buffer allocation, we should instead send the va_list to the print function. But it is way to late at night for me to code this now...
     //TODO implement a debug level control in the terminal handle (permission level?)
     va_list arg;
