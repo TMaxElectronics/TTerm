@@ -52,7 +52,7 @@ static const char * AC_start_stop[] = {
 #define CM_FILEIO_FILESIZE 15000
 
 uint8_t REGISTER_chairMark(TermCommandDescriptor * desc){
-    TERM_addCommandConstAC(CMD_main, APP_NAME, APP_DESCRIPTION, AC_start_stop,desc);
+    TERM_addCommandConstAC(CMD_main, APP_NAME, APP_DESCRIPTION, configMINIMAL_STACK_SIZE + 200, AC_start_stop,desc);
 }
 
 static uint8_t CMD_main(TERMINAL_HANDLE * handle, uint8_t argCount, char ** args){
