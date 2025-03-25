@@ -1355,6 +1355,7 @@ char toLowerCase(char c){
         return c + 32;
     }
     
+    //TODO: eeeehhhm wtf git? I know encoding is hard but upper and lower case umlauts should definetely be handled xD
     switch(c){
         case 'Ä':
             return 'ä';
@@ -1573,13 +1574,13 @@ const char * TERM_getVT100Code(uint16_t cmd, uint8_t var){
             
         case _VT100_CURSOR_ENABLE:
             return "\x1b[?25h";
-            break;
+            
         case _VT100_CURSOR_DISABLE:
             return "\x1b[?25l";
-            break;
+            
         case _VT100_CLS:
             return "\x1b[2J\033[1;1H";
-            break;
+            
             
     }
     return "";
