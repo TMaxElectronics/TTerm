@@ -25,7 +25,7 @@
 
 //Should the terminal implement a working directory and include basic file commands?
 //NOTE: this requires FatFS
-//#define TERM_SUPPORT_CWD
+//#define TERM_SUPPORT_CWD 1
 
 //If you want to have the "reset" command available you can define what function should be called here
 #define TERM_RESET_FUNCTION(X) SYS_softwareReset()

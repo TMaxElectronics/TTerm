@@ -28,7 +28,7 @@
 #include "tte.h"
 
 //is FATFS present?
-#if __has_include("ff.h")
+#if !__is_compiling || __has_include("ff.h")
 
 #include "string.h"
 #include "ff.h"

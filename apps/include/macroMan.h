@@ -20,20 +20,12 @@
  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
-#include "apps.h"
-#include "chairmark.h"
 
-#if !__is_compiling || __has_include("FreeRTOS.h")
-#include "top.h"
-#endif
+#if !defined(app_Macro_H)
+#define app_Macro_H
 
-uint8_t REGISTER_apps(TermCommandDescriptor * desc){
-    
-//register top if freeRTOS is available
-#if !__is_compiling || __has_include("FreeRTOS.h")
-    REGISTER_top(desc);
+#include "TTerm.h"
+
+uint8_t REGISTER_macroMan(TermCommandDescriptor * desc);
+
 #endif
-    REGISTER_chairMark(desc);
-    //REGISTER_macroMan(desc);
-    return TERM_CMD_EXIT_SUCCESS;
-}
