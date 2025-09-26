@@ -36,7 +36,7 @@
 
 //What text should the terminal print at startup?
 #ifdef TERM_ENABLE_STARTUP_TEXT
-#define TERM_startupText "Welcome to a test terminal :)"
+#define TERM_startupText "Welcome to the SpeedBox configuration Terminal"
 #endif   
 
 
